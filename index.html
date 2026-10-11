@@ -7,6 +7,9 @@
   <title>StageLink Auditions</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230a0a0a'/%3E%3Cpath d='M18 18h30v8H27v7h17v8H27v10h-9z' fill='white'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="assets/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="assets/config.js" defer></script>
+  <script src="assets/backend.js" defer></script>
   <script src="assets/app.js" defer></script>
 </head>
 <body data-page="welcome">
@@ -41,7 +44,8 @@
           </button>
         </div>
         <a class="button secondary" id="resume-session" href="feed.html" hidden style="width:100%;margin-top:14px"></a>
-        <p class="demo-note">Esta versión demostrativa guarda tus cambios solamente en este navegador.</p>
+        <a class="text-button" id="sign-in-link" href="auth.html?mode=login">Ya tengo una cuenta · Iniciar sesión</a>
+        <p class="demo-note" id="welcome-mode-note">Preparando StageLink…</p>
       </section>
     </div>
   </main>

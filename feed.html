@@ -7,6 +7,9 @@
   <title>Audiciones · StageLink</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230a0a0a'/%3E%3Cpath d='M18 18h30v8H27v7h17v8H27v10h-9z' fill='white'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="assets/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="assets/config.js" defer></script>
+  <script src="assets/backend.js" defer></script>
   <script src="assets/app.js" defer></script>
 </head>
 <body data-page="feed">
@@ -49,8 +52,16 @@
             </select>
           </label>
           <label class="field">
+            <span class="sr-only">Tipo de rol</span>
+            <select class="select" name="role"><option value="">Todo rol</option><option>Principal</option><option>Reparto</option><option>Ensamble</option></select>
+          </label>
+          <label class="field">
             <span class="sr-only">Ubicación</span>
             <select class="select" name="location"><option value="">Toda ubicación</option></select>
+          </label>
+          <label class="field">
+            <span class="sr-only">Tamaño de la compañía</span>
+            <select class="select" name="companySize"><option value="">Toda compañía</option><option>Independiente</option><option>Pequeña</option><option>Mediana</option><option>Grande</option></select>
           </label>
           <label class="filter-toggle"><input type="checkbox" name="saved"> Solo guardadas</label>
         </form>

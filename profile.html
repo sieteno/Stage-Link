@@ -7,6 +7,9 @@
   <title>Mi perfil · StageLink</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230a0a0a'/%3E%3Cpath d='M18 18h30v8H27v7h17v8H27v10h-9z' fill='white'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="assets/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="assets/config.js" defer></script>
+  <script src="assets/backend.js" defer></script>
   <script src="assets/app.js" defer></script>
 </head>
 <body data-page="profile">
@@ -56,10 +59,24 @@
               <h2 class="section-title" id="actor-data-title">Información artística</h2>
               <div class="form-grid">
                 <label class="field"><span class="field-label">Fecha de nacimiento</span><input class="input" type="date" name="birthdate"></label>
+                <label class="field"><span class="field-label">Género para requisitos de casting</span><select class="select" name="gender"><option value="">Prefiero no indicarlo</option><option>Femenino</option><option>Masculino</option><option>No binario</option></select></label>
                 <label class="field"><span class="field-label">Estatura</span><input class="input" name="height" placeholder="Ej. 165 cm"></label>
                 <label class="field"><span class="field-label">Rango de representación</span><input class="input" name="ageRange" placeholder="Ej. 18–28 años"></label>
                 <label class="field"><span class="field-label">Idiomas</span><input class="input" name="languages"></label>
                 <label class="field span-2"><span class="field-label">Habilidades</span><input class="input" name="skills" placeholder="Actuación, canto, danza…"></label>
+              </div>
+              <div class="history-builder">
+                <h3 class="section-title">Experiencia en producciones</h3>
+                <p class="form-note">Registra obras, cortos o montajes que formen parte de tu hoja de vida.</p>
+                <div class="form-grid" style="margin-top:14px">
+                  <label class="field"><span class="field-label">Producción</span><input class="input" name="historyProduction" placeholder="Ej. La vida es sueño"></label>
+                  <label class="field"><span class="field-label">Compañía</span><input class="input" name="historyCompany"></label>
+                  <label class="field"><span class="field-label">Personaje o función</span><input class="input" name="historyRole"></label>
+                  <label class="field"><span class="field-label">Año</span><input class="input" type="number" name="historyYear" min="1900" max="2200" placeholder="2026"></label>
+                  <label class="field span-2"><span class="field-label">Descripción breve</span><input class="input" name="historyDescription" placeholder="Participación, director o reconocimiento"></label>
+                </div>
+                <button class="button secondary small" id="add-work-history" type="button" style="margin-top:12px">Agregar experiencia</button>
+                <div class="management-list" id="work-history-list" style="margin-top:14px"></div>
               </div>
             </section>
 
@@ -67,6 +84,7 @@
               <h2 class="section-title" id="producer-data-title">Información de la compañía</h2>
               <div class="form-grid">
                 <label class="field"><span class="field-label">Tipo de compañía</span><input class="input" name="companyType"></label>
+                <label class="field"><span class="field-label">Tamaño de la compañía</span><select class="select" name="companySize"><option value="">Sin especificar</option><option>Independiente</option><option>Pequeña</option><option>Mediana</option><option>Grande</option></select></label>
                 <label class="field"><span class="field-label">Persona de contacto</span><input class="input" name="contactName"></label>
                 <label class="field span-2"><span class="field-label">Sitio web</span><input class="input" type="url" name="website" placeholder="https://"></label>
               </div>

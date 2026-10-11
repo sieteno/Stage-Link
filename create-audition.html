@@ -7,6 +7,9 @@
   <title>Crear convocatoria · StageLink</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230a0a0a'/%3E%3Cpath d='M18 18h30v8H27v7h17v8H27v10h-9z' fill='white'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="assets/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+  <script src="assets/config.js" defer></script>
+  <script src="assets/backend.js" defer></script>
   <script src="assets/app.js" defer></script>
 </head>
 <body data-page="create">
@@ -45,7 +48,7 @@
               <div class="surface-body">
                 <div class="form-grid">
                   <label class="field"><span class="field-label">Nombre de la obra o proyecto</span><input class="input" name="title" required placeholder="Ej. La vida es sueño"></label>
-                  <label class="field"><span class="field-label">Tipo</span><select class="select" name="type" required><option>Teatro</option><option>Musical</option><option>Cortometraje</option></select></label>
+                  <label class="field"><span class="field-label">Tipo</span><select class="select" name="type" required><option>Teatro</option><option>Musical</option><option>Cortometraje</option><option>Serie</option><option>Cine</option><option>Publicidad</option><option>Otro</option></select></label>
                   <label class="field span-2"><span class="field-label">Descripción</span><textarea class="textarea" name="description" required placeholder="Cuenta de qué trata el proyecto y qué enfoque tendrá el montaje."></textarea></label>
                   <label class="field"><span class="field-label">Modalidad de compensación</span><select class="select" name="compensationType" required><option value="paid">Remunerado</option><option value="ad-honorem">Proyecto ad honorem</option><option value="experience">Intercambio de experiencia</option></select></label>
                   <label class="field" id="compensation-field"><span class="field-label">Detalle del pago</span><input class="input" name="compensation" required placeholder="Ej. B/. 300 por temporada"></label>
@@ -90,7 +93,7 @@
                       <label class="field"><span class="field-label">Nombre del personaje</span><input class="input" id="role-name" name="roleName" placeholder="Ej. Adela"></label>
                       <label class="field"><span class="field-label">Perfil breve</span><input class="input" name="roleProfile" placeholder="Ej. Joven adulta · Principal"></label>
                       <label class="field"><span class="field-label">Rango de edad</span><input class="input" name="roleAge" placeholder="Ej. 18–30 años"></label>
-                      <label class="field"><span class="field-label">Género del personaje</span><select class="select" name="roleGender"><option>Abierto</option><option>Femenino</option><option>Masculino</option><option>No binario</option></select></label>
+                      <label class="field"><span class="field-label">Género del personaje</span><select class="select" name="roleGender"><option>Cualquier género</option><option>Femenino</option><option>Masculino</option><option>No binario</option></select></label>
                       <label class="field span-2"><span class="field-label">Descripción del rol</span><textarea class="textarea" name="roleDescription"></textarea></label>
                       <label class="field span-2"><span class="field-label">Material específico</span><textarea class="textarea" name="roleRequirement" placeholder="Ej. Self-tape con la escena adjunta."></textarea></label>
                     </div>
