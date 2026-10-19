@@ -5,6 +5,8 @@
     role: "stagelink.role",
     profiles: "stagelink.profiles",
     portfolio: "stagelink.portfolio",
+    workHistory: "stagelink.workHistory",
+    remoteAuditions: "stagelink.remoteAuditions",
     createdAuditions: "stagelink.createdAuditions",
     savedAuditions: "stagelink.savedAuditions",
     applications: "stagelink.applications",
@@ -12,11 +14,18 @@
     candidates: "stagelink.candidates"
   };
 
+  const backend = window.StageLinkBackend || null;
+
+  function isRemoteMode() {
+    return Boolean(backend?.configured);
+  }
+
   const DEFAULT_AUDITIONS = [
     {
       id: "los-miserables",
       title: "Los Miserables",
       company: "Full House Panamá",
+      companySize: "Mediana",
       type: "Musical",
       compensationType: "paid",
       compensation: "B/. 350 por temporada",
@@ -62,6 +71,7 @@
       id: "mentirosas",
       title: "Mentirosas",
       company: "Stardust Entertainment",
+      companySize: "Pequeña",
       type: "Musical",
       compensationType: "paid",
       compensation: "B/. 280 por temporada",
@@ -98,6 +108,7 @@
       id: "la-casa-de-bernarda-alba",
       title: "La casa de Bernarda Alba",
       company: "Producciones Istmo",
+      companySize: "Independiente",
       type: "Teatro",
       compensationType: "ad-honorem",
       compensation: "Proyecto ad honorem",
@@ -135,6 +146,7 @@
       id: "puente-de-sal",
       title: "Puente de sal",
       company: "Colectivo Umbral",
+      companySize: "Independiente",
       type: "Cortometraje",
       compensationType: "experience",
       compensation: "Intercambio de experiencia y material",
@@ -167,6 +179,7 @@
       bio: "Actriz en formación con interés en teatro musical y drama contemporáneo.",
       phone: "+507 6000-1234",
       birthdate: "2003-05-18",
+      gender: "Femenino",
       height: "165 cm",
       ageRange: "18–28 años",
       skills: "Actuación, canto, danza contemporánea",
@@ -179,6 +192,7 @@
       bio: "Compañía independiente dedicada a nuevas lecturas del repertorio latinoamericano.",
       phone: "+507 390-8840",
       companyType: "Compañía independiente",
+      companySize: "Independiente",
       website: "https://example.com",
       contactName: "Laura Méndez",
       avatar: ""
@@ -274,8 +288,10 @@
   }
 
   function ensureSeedData() {
+    if (isRemoteMode()) return;
     if (!localStorage.getItem(STORAGE.profiles)) write(STORAGE.profiles, DEFAULT_PROFILES);
     if (!localStorage.getItem(STORAGE.portfolio)) write(STORAGE.portfolio, DEFAULT_PORTFOLIO);
+    if (!localStorage.getItem(STORAGE.workHistory)) write(STORAGE.workHistory, []);
     if (!localStorage.getItem(STORAGE.createdAuditions)) write(STORAGE.createdAuditions, []);
     if (!localStorage.getItem(STORAGE.savedAuditions)) write(STORAGE.savedAuditions, []);
     if (!localStorage.getItem(STORAGE.applications)) write(STORAGE.applications, DEFAULT_APPLICATIONS);
@@ -304,7 +320,42 @@
   }
 
   function getAuditions() {
+    if (isRemoteMode()) return read(STORAGE.remoteAuditions, []);
     return [...DEFAULT_AUDITIONS, ...read(STORAGE.createdAuditions, [])];
+  }
+
+  function applyRemoteState(state) {
+    if (!state) return;
+    localStorage.setItem(STORAGE.role, state.role);
+    write(STORAGE.profiles, { actor: state.profile, producer: state.profile });
+    write(STORAGE.remoteAuditions, state.auditions || []);
+    write(STORAGE.portfolio, state.portfolio || []);
+    write(STORAGE.workHistory, state.workHistory || []);
+    write(STORAGE.savedAuditions, state.savedAuditions || []);
+    write(STORAGE.applications, state.applications || []);
+    write(STORAGE.candidates, state.candidates || []);
+    write(STORAGE.notifications, state.notifications || []);
+  }
+
+  async function refreshRemoteState() {
+    if (!isRemoteMode()) return null;
+    const state = await backend.fetchState();
+    applyRemoteState(state);
+    return state;
+  }
+
+  function friendlyError(error) {
+    const message = String(error?.message || error || "Ocurrió un error inesperado.");
+    const translations = [
+      [/duplicate key|applications_audition_id_role_id_actor_id_key/i, "Ya existe una postulación para ese rol."],
+      [/row-level security|violates row-level security/i, "Tu cuenta no tiene permiso para realizar esta acción."],
+      [/payload too large|maximum allowed size|file size/i, "El archivo supera el tamaño permitido."],
+      [/failed to fetch|network/i, "No fue posible conectar. Revisa tu internet e inténtalo nuevamente."],
+      [/deadline_before_audition/i, "La fecha límite no puede ser posterior a la audición."],
+      [/portfolio_source_required/i, "Selecciona un archivo o agrega un enlace externo."],
+      [/application_materials_portfolio_item_id_fkey|foreign key constraint/i, "Ese material forma parte de una postulación y no puede eliminarse todavía."]
+    ];
+    return translations.find(([pattern]) => pattern.test(message))?.[1] || message;
   }
 
   function findAudition(id) {
@@ -318,6 +369,23 @@
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
+  }
+
+  function normalizeHttpUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      const parsed = new URL(raw);
+      return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function safePreviewUrl(value) {
+    const raw = String(value || "").trim();
+    if (/^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(raw)) return raw;
+    return normalizeHttpUrl(raw);
   }
 
   function slugify(value) {
@@ -365,6 +433,51 @@
     }).format(date);
   }
 
+  function formatDateTimeLocal(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  }
+
+  function ageFromBirthdate(value) {
+    if (!value) return null;
+    const birthdate = new Date(`${value}T12:00:00`);
+    if (Number.isNaN(birthdate.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birthdate.getFullYear();
+    const beforeBirthday = today.getMonth() < birthdate.getMonth()
+      || (today.getMonth() === birthdate.getMonth() && today.getDate() < birthdate.getDate());
+    if (beforeBirthday) age -= 1;
+    return age;
+  }
+
+  function assessRoleEligibility(role) {
+    const profile = getProfile("actor");
+    const errors = [];
+    const warnings = [];
+    const age = ageFromBirthdate(profile.birthdate);
+    let ageMin = Number(role.ageMin) || null;
+    let ageMax = Number(role.ageMax) || null;
+    if (!ageMin && !ageMax) {
+      const numbers = String(role.ageRange || "").match(/\d+/g)?.map(Number) || [];
+      if (numbers.length >= 2) [ageMin, ageMax] = numbers;
+    }
+    if (age === null && (ageMin || ageMax)) {
+      warnings.push("Completa tu fecha de nacimiento para verificar el rango de edad.");
+    } else if (age !== null && ((ageMin && age < ageMin) || (ageMax && age > ageMax))) {
+      errors.push(`El rol solicita ${role.ageRange || `${ageMin || 0}–${ageMax || "más"} años`} y tu edad registrada es ${age}.`);
+    }
+    const openGender = ["", "Abierto", "Cualquier género", "Indistinto", "No especificado"].includes(role.gender || "");
+    if (!openGender && !profile.gender) {
+      warnings.push("Completa el género en tu perfil para verificar este requisito.");
+    } else if (!openGender && profile.gender !== role.gender) {
+      errors.push(`El rol está indicado para ${String(role.gender).toLocaleLowerCase("es")}.`);
+    }
+    return { eligible: errors.length === 0, errors, warnings };
+  }
+
   function compensationLabel(audition) {
     if (audition.compensationType === "paid") return audition.compensation || "Remunerado";
     if (audition.compensationType === "ad-honorem") return "Ad honorem";
@@ -375,6 +488,11 @@
     if (audition.compensationType === "paid") return "success";
     if (audition.compensationType === "ad-honorem") return "warning";
     return "";
+  }
+
+  function isAuditionOpen(audition) {
+    const today = new Date().toISOString().slice(0, 10);
+    return (audition.status || "published") === "published" && (!audition.deadline || audition.deadline >= today);
   }
 
   function icon(name, extraClass = "") {
@@ -452,7 +570,7 @@
   function initShell(page) {
     const role = getRole();
     if (!role) {
-      window.location.replace("index.html");
+      window.location.replace(isRemoteMode() ? "auth.html" : "index.html");
       return false;
     }
     const profile = getProfile(role);
@@ -481,9 +599,26 @@
           <p class="topbar-eyebrow">${escapeHtml(pageMeta[1])}</p>
           <h2 class="topbar-title">${escapeHtml(pageMeta[0])}</h2>
         </div>
-        <a class="role-chip" href="profile.html#tipo-cuenta" aria-label="Cambiar tipo de cuenta">
-          <span class="dot"></span><span>${role === "producer" ? "Productora" : "Artista"}</span>
-        </a>`;
+        <div class="heading-actions">
+          <span class="role-chip" aria-label="Tipo de cuenta actual">
+            <span class="dot"></span><span>${role === "producer" ? "Productora" : "Artista"}</span>
+          </span>
+          ${isRemoteMode() ? '<button class="button ghost small" type="button" data-sign-out>Cerrar sesión</button>' : ""}
+        </div>`;
+      topbar.querySelector("[data-sign-out]")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "Saliendo…";
+        try {
+          await backend.signOut();
+          Object.values(STORAGE).forEach((key) => localStorage.removeItem(key));
+          window.location.replace("index.html");
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = "Cerrar sesión";
+          showToast("No se pudo cerrar la sesión", friendlyError(error));
+        }
+      });
     }
 
     if (mobileNav) {
@@ -533,6 +668,10 @@
     buttons.forEach((button) => {
       button.addEventListener("click", () => {
         const role = button.dataset.enterRole;
+        if (isRemoteMode()) {
+          window.location.href = `auth.html?mode=register&role=${encodeURIComponent(role)}`;
+          return;
+        }
         setRole(role);
         window.location.href = "feed.html";
       });
@@ -540,6 +679,14 @@
 
     const savedRole = getRole();
     const resume = document.querySelector("#resume-session");
+    const signIn = document.querySelector("#sign-in-link");
+    const note = document.querySelector("#welcome-mode-note");
+    if (signIn) signIn.hidden = !isRemoteMode();
+    if (note) {
+      note.textContent = isRemoteMode()
+        ? "Tus perfiles y postulaciones se guardan de forma segura en tu cuenta."
+        : "Modo demostración: los cambios se guardan solamente en este navegador.";
+    }
     if (savedRole && resume) {
       const profile = getProfile(savedRole);
       resume.hidden = false;
@@ -562,6 +709,8 @@
         <span class="badge">${escapeHtml(audition.type)}</span>
         <span class="badge ${compensationBadgeClass(audition)}">${escapeHtml(compensationLabel(audition))}</span>
         <span class="badge">${audition.roles.length} ${audition.roles.length === 1 ? "rol" : "roles"}</span>
+        ${audition.companySize ? `<span class="badge">Compañía ${escapeHtml(audition.companySize.toLocaleLowerCase("es"))}</span>` : ""}
+        ${isAuditionOpen(audition) ? "" : '<span class="badge danger">Cerrada</span>'}
       </div>
       <div class="audition-facts">
         <span class="fact">${icon("calendar")}<span>${escapeHtml(formatDate(audition.date))} · ${escapeHtml(audition.time)}</span></span>
@@ -574,9 +723,18 @@
     </article>`;
   }
 
-  function toggleSavedAudition(id) {
+  async function toggleSavedAudition(id) {
     const saved = read(STORAGE.savedAuditions, []);
     const index = saved.indexOf(id);
+    const shouldSave = index < 0;
+    if (isRemoteMode()) {
+      try {
+        await backend.setSavedAudition(id, shouldSave);
+      } catch (error) {
+        showToast("No se pudo actualizar", friendlyError(error));
+        return index >= 0;
+      }
+    }
     if (index >= 0) {
       saved.splice(index, 1);
       write(STORAGE.savedAuditions, saved);
@@ -607,16 +765,21 @@
       const query = String(data.get("query") || "").trim().toLocaleLowerCase("es");
       const type = String(data.get("type") || "");
       const compensation = String(data.get("compensation") || "");
+      const roleType = String(data.get("role") || "");
       const location = String(data.get("location") || "");
+      const companySize = String(data.get("companySize") || "");
       const onlySaved = data.get("saved") === "on";
       const saved = read(STORAGE.savedAuditions, []);
 
       const filtered = getAuditions().filter((audition) => {
         const haystack = [audition.title, audition.company, audition.location, audition.district, ...audition.roles.map((role) => role.name)].join(" ").toLocaleLowerCase("es");
-        return (!query || haystack.includes(query))
+        return (getRole() === "producer" || isAuditionOpen(audition))
+          && (!query || haystack.includes(query))
           && (!type || audition.type === type)
           && (!compensation || audition.compensationType === compensation)
+          && (!roleType || audition.roles.some((role) => `${role.profile} ${role.name}`.toLocaleLowerCase("es").includes(roleType.toLocaleLowerCase("es"))))
           && (!location || audition.district === location)
+          && (!companySize || audition.companySize === companySize)
           && (!onlySaved || saved.includes(audition.id));
       });
 
@@ -631,10 +794,12 @@
       }
       results.innerHTML = filtered.map((audition) => auditionCardMarkup(audition, saved)).join("");
       results.querySelectorAll("[data-save-audition]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const state = toggleSavedAudition(button.dataset.saveAudition);
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          const state = await toggleSavedAudition(button.dataset.saveAudition);
           button.dataset.saved = String(state);
           button.setAttribute("aria-label", state ? "Quitar de guardadas" : "Guardar convocatoria");
+          button.disabled = false;
           if (form.elements.saved.checked && !state) render();
         });
       });
@@ -664,7 +829,9 @@
     const currentRole = getRole();
     let action = "";
     if (currentRole === "actor") {
-      action = existing
+      action = !isAuditionOpen(audition)
+        ? '<span class="badge danger">Esta convocatoria ya cerró</span>'
+        : existing
         ? `<a class="button secondary" href="dashboard.html">Postulación: ${escapeHtml(existing.status)}</a>`
         : `<button class="button" type="button" data-open-application>Inscribirme a este rol</button>`;
     } else if (audition.owner || read(STORAGE.createdAuditions, []).some((item) => item.id === audition.id)) {
@@ -727,11 +894,13 @@
       });
     });
 
-    root.querySelector("[data-detail-save]")?.addEventListener("click", (event) => {
+    root.querySelector("[data-detail-save]")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
-      const state = toggleSavedAudition(audition.id);
+      button.disabled = true;
+      const state = await toggleSavedAudition(audition.id);
       button.dataset.saved = String(state);
       button.querySelector("span").textContent = state ? "Guardada" : "Guardar";
+      button.disabled = false;
     });
 
     root.querySelector("[data-calendar]")?.addEventListener("click", () => downloadCalendar(audition));
@@ -740,14 +909,24 @@
     const dialogTitle = dialog?.querySelector("#application-title");
     const form = dialog?.querySelector("#application-form");
     const materialContainer = dialog?.querySelector("#application-materials");
+    const eligibilityMessage = dialog?.querySelector("#eligibility-message");
 
     function openApplicationDialog() {
       if (!dialog || !form || !materialContainer) return;
       const portfolio = read(STORAGE.portfolio, []);
+      const eligibility = assessRoleEligibility(selectedRole);
       dialogTitle.textContent = `${audition.title} · ${selectedRole.name}`;
       materialContainer.innerHTML = portfolio.length
         ? portfolio.map((item) => `<label class="check-card"><input type="checkbox" name="materials" value="${escapeHtml(item.id)}" ${item.type === "image" || item.type === "document" ? "checked" : ""}> <span>${escapeHtml(item.name)}</span></label>`).join("")
         : `<div class="empty-state card"><div class="empty-state-inner"><p>Tu portafolio está vacío.</p><a class="button secondary small" href="portfolio.html">Agregar material</a></div></div>`;
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (eligibilityMessage) {
+        const messages = [...eligibility.errors, ...eligibility.warnings];
+        eligibilityMessage.hidden = messages.length === 0;
+        eligibilityMessage.dataset.type = eligibility.eligible ? "info" : "error";
+        eligibilityMessage.textContent = messages.join(" ");
+      }
+      submitButton.disabled = !eligibility.eligible || portfolio.length === 0;
       dialog.showModal();
       document.body.classList.add("modal-open");
     }
@@ -757,7 +936,7 @@
     dialog?.addEventListener("click", (event) => {
       if (event.target === dialog) dialog.close();
     });
-    form?.addEventListener("submit", (event) => {
+    form?.addEventListener("submit", async (event) => {
       event.preventDefault();
       const applications = read(STORAGE.applications, []);
       if (applications.some((item) => item.auditionId === audition.id && item.roleId === selectedRole.id)) {
@@ -767,6 +946,35 @@
         return;
       }
       const data = new FormData(form);
+      const selectedMaterials = data.getAll("materials");
+      if (!selectedMaterials.length) {
+        showToast("Selecciona material", "Comparte al menos un elemento de tu portafolio.");
+        return;
+      }
+      const submitButton = form.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
+      submitButton.textContent = "Enviando…";
+      if (isRemoteMode()) {
+        try {
+          await backend.createApplication({
+            auditionId: audition.id,
+            roleId: selectedRole.id,
+            note: data.get("note"),
+            materials: selectedMaterials
+          });
+          await refreshRemoteState();
+          dialog.close();
+          form.reset();
+          showToast("Postulación enviada", "La productora ya puede revisar tu perfil y material.");
+          renderRoleDetail();
+        } catch (error) {
+          showToast("No se pudo enviar", friendlyError(error));
+        } finally {
+          submitButton.disabled = false;
+          submitButton.textContent = "Confirmar y enviar";
+        }
+        return;
+      }
       const application = {
         id: `application-${Date.now()}`,
         auditionId: audition.id,
@@ -776,11 +984,32 @@
         company: audition.company,
         date: new Date().toISOString(),
         status: "En revisión",
-        materials: data.getAll("materials"),
+        materials: selectedMaterials,
         note: String(data.get("note") || "").trim()
       };
       applications.unshift(application);
       write(STORAGE.applications, applications);
+      const actorProfile = getProfile("actor");
+      const candidates = read(STORAGE.candidates, []);
+      candidates.unshift({
+        id: application.id,
+        auditionId: audition.id,
+        name: actorProfile.displayName,
+        age: ageFromBirthdate(actorProfile.birthdate),
+        role: selectedRole.name,
+        skills: String(actorProfile.skills || "").split(",").map((item) => item.trim()).filter(Boolean),
+        status: "En revisión",
+        rating: 0,
+        note: "",
+        applicationNote: application.note,
+        avatar: actorProfile.avatar || "",
+        city: actorProfile.city || "",
+        bio: actorProfile.bio || "",
+        materials: read(STORAGE.portfolio, []).filter((item) => application.materials.includes(item.id)),
+        workHistory: read(STORAGE.workHistory, []),
+        auditionTime: ""
+      });
+      write(STORAGE.candidates, candidates);
       addNotification({
         title: "Postulación enviada",
         message: `Recibimos tu postulación para ${audition.title} como ${selectedRole.name}.`,
@@ -856,29 +1085,46 @@
         grid.innerHTML = `<div class="empty-state card" style="grid-column:1/-1"><div class="empty-state-inner"><span class="empty-icon">${icon("portfolio")}</span><h2>Tu portafolio está vacío</h2><p>Agrega al menos un headshot, un video y tu CV para postularte con mayor facilidad.</p></div></div>`;
         return;
       }
-      grid.innerHTML = items.map((item, index) => `<article class="material-card card">
-        <div class="material-preview">${item.preview ? `<img src="${escapeHtml(item.preview)}" alt="Vista previa de ${escapeHtml(item.name)}">` : icon(materialIcon(item.type))}</div>
+      grid.innerHTML = items.map((item, index) => {
+        const previewUrl = safePreviewUrl(item.preview);
+        return `<article class="material-card card">
+        <div class="material-preview">${previewUrl && item.type === "image" ? `<img src="${escapeHtml(previewUrl)}" alt="Vista previa de ${escapeHtml(item.name)}">` : icon(materialIcon(item.type))}</div>
         <div><h3>${escapeHtml(item.name)}</h3><p class="material-meta">${escapeHtml(item.size || "Archivo local")} ${item.demo ? "· Ejemplo" : ""}</p></div>
         <div class="badge-row">${(item.tags || []).map((tag) => `<span class="badge">${escapeHtml(tag)}</span>`).join("")}</div>
         <div class="material-actions">
           <span>
+            ${previewUrl ? `<a class="button ghost small" href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener">Abrir</a>` : ""}
             <button class="button ghost small" type="button" data-move="up" data-id="${escapeHtml(item.id)}" ${index === 0 ? "disabled" : ""} aria-label="Mover ${escapeHtml(item.name)} hacia arriba">↑</button>
             <button class="button ghost small" type="button" data-move="down" data-id="${escapeHtml(item.id)}" ${index === items.length - 1 ? "disabled" : ""} aria-label="Mover ${escapeHtml(item.name)} hacia abajo">↓</button>
           </span>
           <button class="button ghost small" type="button" data-delete-material="${escapeHtml(item.id)}" aria-label="Eliminar ${escapeHtml(item.name)}">${icon("trash", "icon-inline")}</button>
         </div>
-      </article>`).join("");
+      </article>`;
+      }).join("");
 
       grid.querySelectorAll("[data-delete-material]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const next = read(STORAGE.portfolio, []).filter((item) => item.id !== button.dataset.deleteMaterial);
+        button.addEventListener("click", async () => {
+          const current = read(STORAGE.portfolio, []);
+          const item = current.find((entry) => entry.id === button.dataset.deleteMaterial);
+          if (!item || !window.confirm(`¿Eliminar “${item.name}” del portafolio?`)) return;
+          button.disabled = true;
+          if (isRemoteMode()) {
+            try {
+              await backend.deletePortfolioItem(item);
+            } catch (error) {
+              button.disabled = false;
+              showToast("No se pudo eliminar", friendlyError(error));
+              return;
+            }
+          }
+          const next = current.filter((entry) => entry.id !== button.dataset.deleteMaterial);
           write(STORAGE.portfolio, next);
           render();
           showToast("Material eliminado");
         });
       });
       grid.querySelectorAll("[data-move]").forEach((button) => {
-        button.addEventListener("click", () => {
+        button.addEventListener("click", async () => {
           const current = read(STORAGE.portfolio, []);
           const from = current.findIndex((item) => item.id === button.dataset.id);
           const to = button.dataset.move === "up" ? from - 1 : from + 1;
@@ -886,6 +1132,15 @@
           [current[from], current[to]] = [current[to], current[from]];
           write(STORAGE.portfolio, current);
           render();
+          if (isRemoteMode()) {
+            try {
+              await backend.reorderPortfolio(current);
+            } catch (error) {
+              showToast("No se guardó el orden", friendlyError(error));
+              await refreshRemoteState();
+              render();
+            }
+          }
         });
       });
     }
@@ -920,35 +1175,72 @@
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (!currentFile) {
+      const data = new FormData(form);
+      const externalUrl = String(data.get("externalUrl") || "").trim();
+      const normalizedExternalUrl = normalizeHttpUrl(externalUrl);
+      if (!currentFile && !externalUrl) {
         fileInput.focus();
-        showToast("Selecciona un archivo", "Puedes arrastrarlo o buscarlo en tu dispositivo.");
+        showToast("Agrega un material", "Selecciona un archivo o pega un enlace externo.");
         return;
       }
-      const data = new FormData(form);
+      if (externalUrl && !normalizedExternalUrl) {
+        form.elements.externalUrl.focus();
+        showToast("Enlace no válido", "Utiliza una dirección que comience con http:// o https://.");
+        return;
+      }
+      if (currentFile && currentFile.size > 100 * 1024 * 1024) {
+        showToast("Archivo demasiado grande", "El límite actual es de 100 MB por archivo.");
+        return;
+      }
       progress.hidden = false;
       progressBar.style.width = "12%";
       const submit = form.querySelector("button[type=submit]");
       submit.disabled = true;
+      submit.textContent = "Guardando…";
       await pause(180);
       progressBar.style.width = "58%";
-      let preview = "";
-      if (currentFile.type.startsWith("image/") && currentFile.size <= 750000) {
+      let preview = normalizedExternalUrl;
+      if (currentFile?.type.startsWith("image/") && currentFile.size <= 750000) {
         preview = await readFileAsDataUrl(currentFile);
       }
       await pause(220);
-      progressBar.style.width = "100%";
       const items = read(STORAGE.portfolio, []);
-      items.push({
-        id: `material-${Date.now()}`,
-        name: String(data.get("name") || currentFile.name).trim(),
-        type: String(data.get("type") || "document"),
-        tags: String(data.get("tags") || "").split(",").map((item) => item.trim()).filter(Boolean).slice(0, 6),
-        size: formatFileSize(currentFile.size),
-        preview,
-        demo: false
-      });
-      write(STORAGE.portfolio, items);
+      if (isRemoteMode()) {
+        try {
+          progressBar.style.width = currentFile ? "64%" : "90%";
+          const item = await backend.uploadPortfolioItem({
+            file: currentFile,
+            externalUrl: normalizedExternalUrl,
+            name: String(data.get("name") || currentFile?.name || "Material").trim(),
+            type: String(data.get("type") || "document"),
+            tags: String(data.get("tags") || ""),
+            sortOrder: items.length
+          });
+          progressBar.style.width = "100%";
+          items.push(item);
+          write(STORAGE.portfolio, items);
+        } catch (error) {
+          progress.hidden = true;
+          progressBar.style.width = "0";
+          submit.disabled = false;
+          submit.textContent = "Guardar material";
+          showToast("No se pudo guardar", friendlyError(error));
+          return;
+        }
+      } else {
+        items.push({
+          id: `material-${Date.now()}`,
+          name: String(data.get("name") || currentFile?.name || "Material").trim(),
+          type: String(data.get("type") || "document"),
+          tags: String(data.get("tags") || "").split(",").map((item) => item.trim()).filter(Boolean).slice(0, 6),
+          size: currentFile ? formatFileSize(currentFile.size) : "Enlace externo",
+          preview,
+          externalUrl: normalizedExternalUrl,
+          demo: false
+        });
+        write(STORAGE.portfolio, items);
+        progressBar.style.width = "100%";
+      }
       await pause(180);
       form.reset();
       currentFile = null;
@@ -956,6 +1248,7 @@
       progress.hidden = true;
       progressBar.style.width = "0";
       submit.disabled = false;
+      submit.textContent = "Guardar material";
       render();
       showToast("Material agregado", "Ya está disponible para tus postulaciones.");
     });
@@ -1001,20 +1294,43 @@
       </article>`).join("");
 
       list.querySelectorAll("[data-read-notification]").forEach((control) => {
-        control.addEventListener("click", () => {
+        control.addEventListener("click", async (event) => {
+          const destination = control.tagName === "A" ? control.href : "";
+          if (destination && isRemoteMode()) event.preventDefault();
+          if (isRemoteMode()) {
+            try {
+              await backend.markNotification(control.dataset.readNotification, true);
+            } catch (error) {
+              showToast("No se pudo actualizar", friendlyError(error));
+              if (destination) window.location.href = destination;
+              return;
+            }
+          }
           const next = read(STORAGE.notifications, []).map((item) => item.id === control.dataset.readNotification ? { ...item, read: true } : item);
           write(STORAGE.notifications, next);
           refreshShellCounts();
           if (control.tagName === "BUTTON") render();
+          if (destination) window.location.href = destination;
         });
       });
     }
 
-    markAll?.addEventListener("click", () => {
+    markAll?.addEventListener("click", async () => {
+      markAll.disabled = true;
+      if (isRemoteMode()) {
+        try {
+          await backend.markAllNotifications();
+        } catch (error) {
+          markAll.disabled = false;
+          showToast("No se pudo actualizar", friendlyError(error));
+          return;
+        }
+      }
       write(STORAGE.notifications, read(STORAGE.notifications, []).map((item) => ({ ...item, read: true })));
       refreshShellCounts();
       render();
       showToast("Notificaciones marcadas como leídas");
+      markAll.disabled = false;
     });
     render();
   }
@@ -1022,30 +1338,95 @@
   function initProfile() {
     const form = document.querySelector("#profile-form");
     if (!form) return;
-    let selectedRole = getRole();
+    const selectedRole = getRole();
     let avatarData = getProfile(selectedRole).avatar || "";
+    let avatarFile = null;
     const actorFields = document.querySelector("#actor-fields");
     const producerFields = document.querySelector("#producer-fields");
     const preview = document.querySelector("#profile-avatar-preview");
     const avatarInput = document.querySelector("#profile-avatar-input");
-    const roleButtons = document.querySelectorAll("[data-profile-role]");
+    const accountTypeLabel = document.querySelector("#account-type-label");
+    const accountTypeDescription = document.querySelector("#account-type-description");
+    const historyList = document.querySelector("#work-history-list");
+    const addHistory = document.querySelector("#add-work-history");
+    if (form.elements.historyYear) form.elements.historyYear.max = String(new Date().getFullYear() + 2);
 
-    function populate(role) {
-      selectedRole = role;
-      const profile = getProfile(role);
+    function renderHistory() {
+      if (!historyList) return;
+      const history = read(STORAGE.workHistory, []);
+      historyList.innerHTML = history.length
+        ? history.map((item) => `<article class="management-card card" data-history="${escapeHtml(item.id)}"><div><h3>${escapeHtml(item.production)}</h3><p>${[item.roleName, item.company, item.year].filter(Boolean).map(escapeHtml).join(" · ")}</p>${item.description ? `<p>${escapeHtml(item.description)}</p>` : ""}</div><button class="button ghost small" type="button" data-delete-history aria-label="Eliminar ${escapeHtml(item.production)}">${icon("trash", "icon-inline")}</button></article>`).join("")
+        : '<div class="empty-state card"><div class="empty-state-inner"><p>Aún no has registrado producciones.</p></div></div>';
+      historyList.querySelectorAll("[data-history]").forEach((card) => {
+        card.querySelector("[data-delete-history]")?.addEventListener("click", async (event) => {
+          const id = card.dataset.history;
+          event.currentTarget.disabled = true;
+          try {
+            if (isRemoteMode()) await backend.deleteWorkHistory(id);
+            write(STORAGE.workHistory, read(STORAGE.workHistory, []).filter((item) => item.id !== id));
+            renderHistory();
+            showToast("Experiencia eliminada");
+          } catch (error) {
+            event.currentTarget.disabled = false;
+            showToast("No se pudo eliminar", friendlyError(error));
+          }
+        });
+      });
+    }
+
+    function populate() {
+      const profile = getProfile(selectedRole);
       avatarData = profile.avatar || "";
+      avatarFile = null;
       for (const [key, value] of Object.entries(profile)) {
         if (form.elements[key] && key !== "avatar") form.elements[key].value = value || "";
       }
-      actorFields.hidden = role !== "actor";
-      producerFields.hidden = role !== "producer";
-      roleButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.profileRole === role)));
+      actorFields.hidden = selectedRole !== "actor";
+      producerFields.hidden = selectedRole !== "producer";
+      if (accountTypeLabel) accountTypeLabel.textContent = selectedRole === "actor" ? "Artista" : "Productora o compañía";
+      if (accountTypeDescription) accountTypeDescription.textContent = selectedRole === "actor"
+        ? "Busca audiciones, administra su portafolio y envía postulaciones."
+        : "Publica convocatorias y administra candidatos.";
       preview.innerHTML = avatarData ? `<img src="${escapeHtml(avatarData)}" alt="Vista previa de foto de perfil">` : escapeHtml(initials(profile.displayName));
       document.querySelector("#profile-preview-name").textContent = profile.displayName;
-      document.querySelector("#profile-preview-role").textContent = role === "actor" ? "Artista escénico" : "Productora / compañía";
+      document.querySelector("#profile-preview-role").textContent = selectedRole === "actor" ? "Artista escénico" : "Productora / compañía";
+      if (selectedRole === "actor") renderHistory();
     }
 
-    roleButtons.forEach((button) => button.addEventListener("click", () => populate(button.dataset.profileRole)));
+    addHistory?.addEventListener("click", async () => {
+      const production = form.elements.historyProduction.value.trim();
+      if (!production) {
+        form.elements.historyProduction.focus();
+        showToast("Escribe el nombre de la producción");
+        return;
+      }
+      const item = {
+        id: `history-${Date.now()}`,
+        production,
+        company: form.elements.historyCompany.value.trim(),
+        roleName: form.elements.historyRole.value.trim(),
+        year: form.elements.historyYear.value,
+        description: form.elements.historyDescription.value.trim()
+      };
+      addHistory.disabled = true;
+      try {
+        if (isRemoteMode()) {
+          const created = await backend.addWorkHistory(item);
+          item.id = created.id;
+        }
+        const history = read(STORAGE.workHistory, []);
+        history.unshift(item);
+        write(STORAGE.workHistory, history);
+        ["historyProduction", "historyCompany", "historyRole", "historyYear", "historyDescription"].forEach((name) => form.elements[name].value = "");
+        renderHistory();
+        showToast("Experiencia agregada");
+      } catch (error) {
+        showToast("No se pudo guardar", friendlyError(error));
+      } finally {
+        addHistory.disabled = false;
+      }
+    });
+
     form.elements.displayName.addEventListener("input", () => {
       document.querySelector("#profile-preview-name").textContent = form.elements.displayName.value || "Nombre de perfil";
       if (!avatarData) preview.textContent = initials(form.elements.displayName.value);
@@ -1058,30 +1439,50 @@
         showToast("Archivo no compatible", "Selecciona una imagen JPG, PNG o WebP.");
         return;
       }
-      if (file.size > 1000000) {
-        showToast("Imagen demasiado grande", "Para esta demo usa una imagen menor de 1 MB.");
+      const limit = isRemoteMode() ? 5 * 1024 * 1024 : 1000000;
+      if (file.size > limit) {
+        showToast("Imagen demasiado grande", `Usa una imagen menor de ${isRemoteMode() ? "5 MB" : "1 MB"}.`);
         return;
       }
+      avatarFile = file;
       avatarData = await readFileAsDataUrl(file);
       preview.innerHTML = `<img src="${escapeHtml(avatarData)}" alt="Vista previa de foto de perfil">`;
     });
 
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!form.reportValidity()) return;
       const data = new FormData(form);
       const allowed = selectedRole === "actor"
-        ? ["displayName", "city", "bio", "phone", "birthdate", "height", "ageRange", "skills", "languages"]
-        : ["displayName", "city", "bio", "phone", "companyType", "website", "contactName"];
+        ? ["displayName", "city", "bio", "phone", "birthdate", "gender", "height", "ageRange", "skills", "languages"]
+        : ["displayName", "city", "bio", "phone", "companyType", "companySize", "website", "contactName"];
       const profile = Object.fromEntries(allowed.map((name) => [name, String(data.get(name) || "").trim()]));
       profile.avatar = avatarData;
-      saveProfile(selectedRole, profile);
-      setRole(selectedRole);
+      profile.role = selectedRole;
+      const submitButton = form.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
+      submitButton.textContent = "Guardando…";
+      if (isRemoteMode()) {
+        try {
+          await backend.updateProfile(profile, avatarFile);
+          await refreshRemoteState();
+        } catch (error) {
+          submitButton.disabled = false;
+          submitButton.textContent = "Guardar cambios";
+          showToast("No se pudo guardar", friendlyError(error));
+          return;
+        }
+      } else {
+        saveProfile(selectedRole, profile);
+        setRole(selectedRole);
+      }
       showToast("Perfil actualizado", "Tus cambios se guardaron correctamente.");
       window.setTimeout(() => window.location.replace("profile.html"), 450);
     });
 
-    document.querySelector("#reset-demo")?.addEventListener("click", () => {
+    const resetDemo = document.querySelector("#reset-demo");
+    if (resetDemo) resetDemo.hidden = isRemoteMode();
+    resetDemo?.addEventListener("click", () => {
       const confirmed = window.confirm("¿Restablecer todos los datos de demostración de StageLink?");
       if (!confirmed) return;
       Object.values(STORAGE).forEach((key) => localStorage.removeItem(key));
@@ -1090,7 +1491,7 @@
       window.location.replace("index.html");
     });
 
-    populate(selectedRole);
+    populate();
   }
 
   function initCreateAudition() {
@@ -1099,10 +1500,6 @@
     if (getRole() !== "producer") {
       formContainer.hidden = true;
       guard.hidden = false;
-      guard.querySelectorAll("[data-switch-role]").forEach((button) => button.addEventListener("click", () => {
-        setRole(button.dataset.switchRole);
-        window.location.reload();
-      }));
       return;
     }
     guard.hidden = true;
@@ -1218,11 +1615,14 @@
         return;
       }
       const name = form.elements.roleName.value.trim();
+      const ageNumbers = form.elements.roleAge.value.match(/\d+/g)?.map(Number) || [];
       draftRoles.push({
         id: `${slugify(name)}-${Date.now()}`,
         name,
         profile: form.elements.roleProfile.value.trim(),
         ageRange: form.elements.roleAge.value.trim(),
+        ageMin: ageNumbers[0] || null,
+        ageMax: ageNumbers[1] || ageNumbers[0] || null,
         gender: form.elements.roleGender.value,
         description: form.elements.roleDescription.value.trim(),
         requirement: form.elements.roleRequirement.value.trim()
@@ -1232,7 +1632,7 @@
       showToast("Rol agregado", "Puedes añadir otro o continuar a la revisión.");
     });
 
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!validateStep(2)) {
         showStep(2);
@@ -1247,6 +1647,7 @@
         id: `${baseId}-${Date.now().toString().slice(-6)}`,
         title: String(data.get("title") || "").trim(),
         company: profile.displayName,
+        companySize: profile.companySize || "",
         type: String(data.get("type") || "Teatro"),
         compensationType: String(data.get("compensationType") || "experience"),
         compensation: String(data.get("compensation") || "").trim(),
@@ -1262,6 +1663,22 @@
         owner: true,
         createdAt: new Date().toISOString()
       };
+      const submitButton = form.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
+      submitButton.textContent = "Publicando…";
+      if (isRemoteMode()) {
+        try {
+          const published = await backend.createAudition(audition);
+          await refreshRemoteState();
+          showToast("Convocatoria publicada", "Ya puede recibir postulaciones reales.");
+          window.setTimeout(() => window.location.href = `audition.html?id=${encodeURIComponent(published.id)}`, 450);
+        } catch (error) {
+          submitButton.disabled = false;
+          submitButton.textContent = "Publicar convocatoria";
+          showToast("No se pudo publicar", friendlyError(error));
+        }
+        return;
+      }
       created.unshift(audition);
       if (!write(STORAGE.createdAuditions, created)) return;
       addNotification({ title: "Convocatoria publicada", message: `${audition.title} ya aparece en el feed de audiciones.`, link: `audition.html?id=${encodeURIComponent(audition.id)}`, type: "audition" });
@@ -1275,7 +1692,7 @@
 
   function statusClass(status) {
     if (["Seleccionado", "Aceptado"].includes(status)) return "success";
-    if (["Rechazado", "No seleccionado"].includes(status)) return "danger";
+    if (["Rechazado", "No seleccionado", "Retirada"].includes(status)) return "danger";
     return "warning";
   }
 
@@ -1298,59 +1715,180 @@
     const list = root.querySelector("#application-list");
     const applications = read(STORAGE.applications, []);
     const stats = root.querySelector("#application-stats");
-    const active = applications.filter((item) => !["Seleccionado", "No seleccionado", "Rechazado"].includes(item.status)).length;
+    const active = applications.filter((item) => !["Seleccionado", "No seleccionado", "Rechazado", "Retirada"].includes(item.status)).length;
     const selected = applications.filter((item) => ["Seleccionado", "Aceptado"].includes(item.status)).length;
     stats.innerHTML = `<div class="stat-card card"><strong>${applications.length}</strong><span>Postulaciones</span></div><div class="stat-card card"><strong>${active}</strong><span>En proceso</span></div><div class="stat-card card"><strong>${selected}</strong><span>Seleccionadas</span></div>`;
     if (!applications.length) {
       list.innerHTML = `<div class="empty-state card"><div class="empty-state-inner"><span class="empty-icon">${icon("inbox")}</span><h2>Aún no tienes postulaciones</h2><p>Explora convocatorias y elige el rol que mejor encaje con tu perfil.</p><a class="button" href="feed.html">Buscar audiciones</a></div></div>`;
       return;
     }
-    list.innerHTML = applications.map((application) => `<article class="application-card card"><div><div class="badge-row"><span class="badge ${statusClass(application.status)}">${escapeHtml(application.status)}</span></div><h3>${escapeHtml(application.title)} · ${escapeHtml(application.roleName)}</h3><p>${escapeHtml(application.company)} · Enviada ${escapeHtml(formatDateTime(application.date))}</p></div><div class="card-actions"><a class="button secondary small" href="audition.html?id=${encodeURIComponent(application.auditionId)}">Ver convocatoria</a></div></article>`).join("");
+    list.innerHTML = applications.map((application) => `<article class="application-card card" data-application="${escapeHtml(application.id)}"><div><div class="badge-row"><span class="badge ${statusClass(application.status)}">${escapeHtml(application.status)}</span>${application.auditionTime ? '<span class="badge success">Cita programada</span>' : ""}</div><h3>${escapeHtml(application.title)} · ${escapeHtml(application.roleName)}</h3><p>${escapeHtml(application.company)} · Enviada ${escapeHtml(formatDateTime(application.date))}</p>${application.auditionTime ? `<p><strong>Cita:</strong> ${escapeHtml(formatDateTime(application.auditionTime))}</p>` : ""}</div><div class="card-actions"><a class="button secondary small" href="audition.html?id=${encodeURIComponent(application.auditionId)}">Ver convocatoria</a>${application.auditionTime ? '<button class="button secondary small" type="button" data-appointment-calendar>Agregar cita al calendario</button>' : ""}${!["Aceptado", "Rechazado", "Retirada"].includes(application.status) ? '<button class="button ghost small" type="button" data-cancel-application>Retirar postulación</button>' : ""}</div></article>`).join("");
+
+    list.querySelectorAll("[data-application]").forEach((card) => {
+      const application = applications.find((item) => item.id === card.dataset.application);
+      card.querySelector("[data-appointment-calendar]")?.addEventListener("click", () => downloadAppointment(application));
+      card.querySelector("[data-cancel-application]")?.addEventListener("click", async (event) => {
+        if (!window.confirm(`¿Retirar tu postulación a ${application.title}?`)) return;
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "Retirando…";
+        try {
+          if (isRemoteMode()) {
+            await backend.cancelApplication(application.id);
+            await refreshRemoteState();
+          } else {
+            write(STORAGE.applications, applications.map((item) => item.id === application.id ? { ...item, status: "Retirada" } : item));
+            write(STORAGE.candidates, read(STORAGE.candidates, []).map((item) => item.id === application.id ? { ...item, status: "Retirada" } : item));
+          }
+          showToast("Postulación retirada");
+          initActorDashboard(root);
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = "Retirar postulación";
+          showToast("No se pudo retirar", friendlyError(error));
+        }
+      });
+    });
+  }
+
+  function downloadAppointment(application) {
+    if (!application?.auditionTime) return;
+    const start = new Date(application.auditionTime);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    const toIcs = (date) => date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    const clean = (value) => String(value || "").replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
+    const content = [
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//StageLink Auditions//ES", "BEGIN:VEVENT",
+      `UID:${application.id}@stagelink.app`, `DTSTAMP:${toIcs(new Date())}`,
+      `DTSTART:${toIcs(start)}`, `DTEND:${toIcs(end)}`,
+      `SUMMARY:${clean(`Cita de audición: ${application.title}`)}`,
+      `DESCRIPTION:${clean(`Rol: ${application.roleName} · ${application.company}`)}`,
+      "END:VEVENT", "END:VCALENDAR"
+    ].join("\r\n");
+    const blob = new Blob([content], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${slugify(application.title)}-cita.ics`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   function initProducerDashboard(root) {
     const auditions = getAuditions().filter((item) => item.owner);
-    const createdIds = new Set(read(STORAGE.createdAuditions, []).map((item) => item.id));
+    const createdIds = new Set(isRemoteMode() ? [] : read(STORAGE.createdAuditions, []).map((item) => item.id));
     const selector = root.querySelector("#managed-audition");
     const list = root.querySelector("#candidate-list");
     const managementList = root.querySelector("#management-list");
     const requested = new URLSearchParams(window.location.search).get("audition");
-    selector.innerHTML = auditions.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === requested ? "selected" : ""}>${escapeHtml(item.title)}</option>`).join("");
+    selector.innerHTML = auditions.length
+      ? auditions.map((item) => `<option value="${escapeHtml(item.id)}" ${item.id === requested ? "selected" : ""}>${escapeHtml(item.title)}</option>`).join("")
+      : '<option value="">No hay convocatorias publicadas</option>';
     managementList.innerHTML = auditions.map((item) => {
       const candidates = read(STORAGE.candidates, []).filter((candidate) => candidate.auditionId === item.id).length;
-      return `<article class="management-card card"><div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(formatDate(item.date))} · ${candidates} postulantes${createdIds.has(item.id) ? " · Creada en esta demo" : ""}</p></div><a class="button secondary small" href="audition.html?id=${encodeURIComponent(item.id)}">Ver</a></article>`;
+      const manageable = isRemoteMode() || createdIds.has(item.id);
+      const today = new Date().toISOString().slice(0, 10);
+      const expired = Boolean(item.deadline && item.deadline < today);
+      const storedStatus = item.status || "published";
+      const statusLabel = storedStatus === "closed" ? "Cerrada" : expired ? "Vencida" : "Publicada";
+      const canToggle = manageable && !expired;
+      return `<article class="management-card card" data-managed-card="${escapeHtml(item.id)}"><div><div class="badge-row"><span class="badge ${statusLabel === "Publicada" ? "success" : "danger"}">${statusLabel}</span></div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(formatDate(item.date))} · ${candidates} postulantes${createdIds.has(item.id) ? " · Creada en esta demo" : ""}</p></div><div class="card-actions"><a class="button secondary small" href="audition.html?id=${encodeURIComponent(item.id)}">Ver</a>${canToggle ? `<button class="button ghost small" type="button" data-toggle-audition>${storedStatus === "closed" ? "Reabrir" : "Cerrar"}</button>` : ""}${manageable ? '<button class="button ghost small" type="button" data-delete-audition>Eliminar</button>' : ""}</div></article>`;
     }).join("");
+    if (!auditions.length) {
+      managementList.innerHTML = `<div class="empty-state card"><div class="empty-state-inner"><p>Aún no has publicado convocatorias.</p><a class="button secondary small" href="create-audition.html">Crear la primera</a></div></div>`;
+    }
+
+    managementList.querySelectorAll("[data-managed-card]").forEach((card) => {
+      const audition = auditions.find((item) => item.id === card.dataset.managedCard);
+      card.querySelector("[data-toggle-audition]")?.addEventListener("click", async (event) => {
+        const nextStatus = (audition.status || "published") === "closed" ? "published" : "closed";
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          if (isRemoteMode()) {
+            await backend.updateAuditionStatus(audition.id, nextStatus);
+            await refreshRemoteState();
+          } else {
+            const created = read(STORAGE.createdAuditions, []).map((item) => item.id === audition.id ? { ...item, status: nextStatus } : item);
+            write(STORAGE.createdAuditions, created);
+          }
+          showToast(nextStatus === "closed" ? "Convocatoria cerrada" : "Convocatoria reabierta");
+          window.setTimeout(() => window.location.reload(), 350);
+        } catch (error) {
+          button.disabled = false;
+          showToast("No se pudo actualizar", friendlyError(error));
+        }
+      });
+      card.querySelector("[data-delete-audition]")?.addEventListener("click", async (event) => {
+        if (!window.confirm(`¿Eliminar definitivamente “${audition.title}” y sus postulaciones?`)) return;
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          if (isRemoteMode()) {
+            await backend.deleteAudition(audition.id);
+            await refreshRemoteState();
+          } else {
+            write(STORAGE.createdAuditions, read(STORAGE.createdAuditions, []).filter((item) => item.id !== audition.id));
+          }
+          showToast("Convocatoria eliminada");
+          window.setTimeout(() => window.location.replace("dashboard.html"), 350);
+        } catch (error) {
+          button.disabled = false;
+          showToast("No se pudo eliminar", friendlyError(error));
+        }
+      });
+    });
 
     function renderCandidates() {
       const candidates = read(STORAGE.candidates, []).filter((candidate) => candidate.auditionId === selector.value);
       const stats = root.querySelector("#candidate-stats");
       const accepted = candidates.filter((candidate) => candidate.status === "Aceptado").length;
-      const pending = candidates.filter((candidate) => ["En espera", "En consideración"].includes(candidate.status)).length;
+      const pending = candidates.filter((candidate) => ["En revisión", "En espera", "En consideración"].includes(candidate.status)).length;
       stats.innerHTML = `<div class="stat-card card"><strong>${candidates.length}</strong><span>Postulantes</span></div><div class="stat-card card"><strong>${pending}</strong><span>En evaluación</span></div><div class="stat-card card"><strong>${accepted}</strong><span>Aceptados</span></div>`;
       if (!candidates.length) {
         list.innerHTML = `<div class="empty-state card"><div class="empty-state-inner"><span class="empty-icon">${icon("users")}</span><h3>Aún no hay postulantes</h3><p>Los perfiles aparecerán aquí conforme lleguen postulaciones.</p></div></div>`;
         return;
       }
       list.innerHTML = candidates.map((candidate) => `<article class="candidate-card card" data-candidate="${escapeHtml(candidate.id)}">
-        ${avatarMarkup({ displayName: candidate.name, avatar: "" })}
-        <div><h3>${escapeHtml(candidate.name)}</h3><p>${escapeHtml(candidate.role)} · ${candidate.age} años</p><div class="badge-row">${candidate.skills.map((skill) => `<span class="badge">${escapeHtml(skill)}</span>`).join("")}</div><div class="rating" aria-label="Calificación de ${escapeHtml(candidate.name)}">${[1,2,3,4,5].map((value) => `<button class="star-button ${value <= candidate.rating ? "is-active" : ""}" type="button" data-rating="${value}" aria-label="${value} estrellas">★</button>`).join("")}</div><label class="field"><span class="field-label">Nota privada</span><textarea class="textarea" rows="2" data-candidate-note>${escapeHtml(candidate.note || "")}</textarea></label><button class="button ghost small" type="button" data-save-note>Guardar nota</button></div>
-        <div class="candidate-actions"><label class="field"><span class="field-label">Estado</span><select class="select status-select" data-candidate-status>${["En espera", "En consideración", "Aceptado", "Rechazado"].map((status) => `<option ${status === candidate.status ? "selected" : ""}>${status}</option>`).join("")}</select></label><button class="button secondary small" type="button" data-view-candidate>Ver portafolio</button></div>
+        ${avatarMarkup({ displayName: candidate.name, avatar: candidate.avatar || "" })}
+        <div><h3>${escapeHtml(candidate.name)}</h3><p>${escapeHtml(candidate.role)} · ${candidate.age === null || candidate.age === undefined ? "Edad no indicada" : `${candidate.age} años`}</p><div class="badge-row">${candidate.skills.map((skill) => `<span class="badge">${escapeHtml(skill)}</span>`).join("")}</div><div class="rating" aria-label="Calificación de ${escapeHtml(candidate.name)}">${[1,2,3,4,5].map((value) => `<button class="star-button ${value <= candidate.rating ? "is-active" : ""}" type="button" data-rating="${value}" aria-label="${value} estrellas">★</button>`).join("")}</div><label class="field"><span class="field-label">Nota privada</span><textarea class="textarea" rows="2" data-candidate-note>${escapeHtml(candidate.note || "")}</textarea></label><button class="button ghost small" type="button" data-save-note>Guardar nota</button></div>
+        <div class="candidate-actions"><label class="field"><span class="field-label">Estado</span><select class="select status-select" data-candidate-status>${["En revisión", "En espera", "En consideración", "Aceptado", "Rechazado"].map((status) => `<option ${status === candidate.status ? "selected" : ""}>${status}</option>`).join("")}</select></label><label class="field"><span class="field-label">Cita de audición</span><input class="input" type="datetime-local" data-candidate-appointment value="${escapeHtml(formatDateTimeLocal(candidate.auditionTime))}"></label><button class="button ghost small" type="button" data-save-appointment>Guardar cita</button><button class="button secondary small" type="button" data-view-candidate>Ver portafolio</button></div>
       </article>`).join("");
 
       list.querySelectorAll("[data-candidate]").forEach((card) => {
         const id = card.dataset.candidate;
-        card.querySelectorAll("[data-rating]").forEach((button) => button.addEventListener("click", () => {
-          updateCandidate(id, { rating: Number(button.dataset.rating) });
-          renderCandidates();
+        card.querySelectorAll("[data-rating]").forEach((button) => button.addEventListener("click", async () => {
+          button.disabled = true;
+          if (await updateCandidate(id, { rating: Number(button.dataset.rating) })) renderCandidates();
         }));
-        card.querySelector("[data-candidate-status]")?.addEventListener("change", (event) => {
-          updateCandidate(id, { status: event.target.value });
-          showToast("Estado actualizado", `${card.querySelector("h3").textContent}: ${event.target.value}`);
-          renderCandidates();
+        card.querySelector("[data-candidate-status]")?.addEventListener("change", async (event) => {
+          event.target.disabled = true;
+          if (await updateCandidate(id, { status: event.target.value })) {
+            showToast("Estado actualizado", `${card.querySelector("h3").textContent}: ${event.target.value}`);
+            renderCandidates();
+          } else {
+            event.target.disabled = false;
+          }
         });
-        card.querySelector("[data-save-note]")?.addEventListener("click", () => {
-          updateCandidate(id, { note: card.querySelector("[data-candidate-note]").value.trim() });
-          showToast("Nota privada guardada");
+        card.querySelector("[data-save-note]")?.addEventListener("click", async (event) => {
+          event.currentTarget.disabled = true;
+          if (await updateCandidate(id, { note: card.querySelector("[data-candidate-note]").value.trim() })) {
+            showToast("Nota privada guardada");
+            event.currentTarget.disabled = false;
+          }
+        });
+        card.querySelector("[data-save-appointment]")?.addEventListener("click", async (event) => {
+          const input = card.querySelector("[data-candidate-appointment]");
+          const value = input.value ? new Date(input.value).toISOString() : "";
+          event.currentTarget.disabled = true;
+          if (await updateCandidate(id, { auditionTime: value })) {
+            showToast("Cita guardada", "El artista recibirá una notificación.");
+            renderCandidates();
+          } else {
+            event.currentTarget.disabled = false;
+          }
         });
         card.querySelector("[data-view-candidate]")?.addEventListener("click", () => {
           const candidate = read(STORAGE.candidates, []).find((item) => item.id === id);
@@ -1363,10 +1901,30 @@
     renderCandidates();
   }
 
-  function updateCandidate(id, patch) {
+  async function updateCandidate(id, patch) {
+    if (isRemoteMode()) {
+      try {
+        await backend.updateCandidate(id, patch);
+      } catch (error) {
+        showToast("No se pudo actualizar", friendlyError(error));
+        return false;
+      }
+    }
     const candidates = read(STORAGE.candidates, []);
     const next = candidates.map((candidate) => candidate.id === id ? { ...candidate, ...patch } : candidate);
     write(STORAGE.candidates, next);
+    if (!isRemoteMode() && (patch.status !== undefined || patch.auditionTime !== undefined)) {
+      const applications = read(STORAGE.applications, []);
+      const application = applications.find((item) => item.id === id);
+      write(STORAGE.applications, applications.map((item) => item.id === id ? { ...item, ...patch } : item));
+      if (application && patch.status !== undefined) {
+        addNotification({ title: "Estado de postulación actualizado", message: `${application.title}: ${patch.status}.`, link: "dashboard.html", type: "status" });
+      }
+      if (application && patch.auditionTime) {
+        addNotification({ title: "Cita de audición programada", message: `${application.title}: revisa la fecha en tus postulaciones.`, link: "dashboard.html", type: "calendar" });
+      }
+    }
+    return true;
   }
 
   function openCandidatePreview(candidate) {
@@ -1375,16 +1933,20 @@
     dialog.setAttribute("aria-labelledby", "candidate-preview-title");
     dialog.innerHTML = `
       <header class="dialog-header">
-        <div><h2 id="candidate-preview-title">${escapeHtml(candidate.name)}</h2><p>${escapeHtml(candidate.role)} · ${escapeHtml(candidate.age)} años</p></div>
+        <div><h2 id="candidate-preview-title">${escapeHtml(candidate.name)}</h2><p>${escapeHtml(candidate.role)}${candidate.age === null || candidate.age === undefined ? "" : ` · ${escapeHtml(candidate.age)} años`}</p></div>
         <button class="dialog-close" type="button" data-close-candidate aria-label="Cerrar">${icon("close", "icon-inline")}</button>
       </header>
       <div class="dialog-body detail-copy">
+        ${candidate.city || candidate.bio ? `<section class="detail-section"><h3>Perfil</h3>${candidate.city ? `<p><strong>Ubicación:</strong> ${escapeHtml(candidate.city)}</p>` : ""}${candidate.bio ? `<p>${escapeHtml(candidate.bio)}</p>` : ""}</section>` : ""}
         <section class="detail-section"><h3>Habilidades</h3><div class="badge-row">${candidate.skills.map((skill) => `<span class="badge">${escapeHtml(skill)}</span>`).join("")}</div></section>
+        ${(candidate.workHistory || []).length ? `<section class="detail-section"><h3>Experiencia</h3><div class="management-list">${candidate.workHistory.map((item) => `<article class="management-card card"><div><h4>${escapeHtml(item.production)}</h4><p>${[item.roleName, item.company, item.year].filter(Boolean).map(escapeHtml).join(" · ")}</p></div></article>`).join("")}</div></section>` : ""}
+        ${candidate.applicationNote ? `<section class="detail-section"><h3>Nota de la postulación</h3><p>${escapeHtml(candidate.applicationNote)}</p></section>` : ""}
         <section class="detail-section"><h3>Material compartido</h3>
           <div class="material-grid">
-            <div class="material-card card"><div class="material-preview">${icon("image")}</div><h3>Headshot profesional</h3><p class="material-meta">Imagen · Vista de demostración</p></div>
-            <div class="material-card card"><div class="material-preview">${icon("video")}</div><h3>Reel de actuación</h3><p class="material-meta">Video · 01:24</p></div>
-            <div class="material-card card"><div class="material-preview">${icon("file")}</div><h3>CV artístico</h3><p class="material-meta">Documento PDF</p></div>
+            ${(candidate.materials || []).length ? candidate.materials.map((item) => {
+              const previewUrl = safePreviewUrl(item.preview);
+              return `<article class="material-card card"><div class="material-preview">${previewUrl && item.type === "image" ? `<img src="${escapeHtml(previewUrl)}" alt="${escapeHtml(item.name)}">` : icon(materialIcon(item.type))}</div><h3>${escapeHtml(item.name)}</h3><p class="material-meta">${escapeHtml(item.size || item.type)}</p>${previewUrl ? `<a class="button secondary small" href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener">Abrir material</a>` : ""}</article>`;
+            }).join("") : '<p class="form-note">La persona no compartió materiales.</p>'}
           </div>
         </section>
       </div>
@@ -1498,9 +2060,29 @@
     window.addEventListener("pagehide", () => lifecycle.abort(), { once: true });
   }
 
-  function init() {
-    ensureSeedData();
+  async function init() {
     const page = document.body.dataset.page || "";
+    if (isRemoteMode()) {
+      try {
+        const connection = await backend.initialize();
+        if (!connection.session) {
+          Object.values(STORAGE).forEach((key) => localStorage.removeItem(key));
+          if (page !== "welcome") {
+            const next = `${window.location.pathname.split("/").pop() || "feed.html"}${window.location.search}`;
+            window.location.replace(`auth.html?next=${encodeURIComponent(next)}`);
+            return;
+          }
+        } else {
+          await refreshRemoteState();
+        }
+      } catch (error) {
+        const root = document.querySelector("#main-content") || document.querySelector(".role-entry") || document.body;
+        root.innerHTML = `<div class="empty-state card"><div class="empty-state-inner"><span class="empty-icon">${icon("info")}</span><h1>No pudimos conectar StageLink</h1><p>${escapeHtml(friendlyError(error))}</p><button class="button" type="button" onclick="window.location.reload()">Reintentar</button></div></div>`;
+        return;
+      }
+    } else {
+      ensureSeedData();
+    }
     if (page !== "welcome" && !initShell(page)) return;
     const initializers = {
       welcome: initWelcome,
@@ -1513,12 +2095,12 @@
       dashboard: initDashboard
     };
     initializers[page]?.();
-    registerWebMcpTools();
+    if (!isRemoteMode()) registerWebMcpTools();
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init, { once: true });
+    document.addEventListener("DOMContentLoaded", () => void init(), { once: true });
   } else {
-    init();
+    void init();
   }
 })();

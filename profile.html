@@ -32,16 +32,10 @@
           <form class="card panel" id="profile-form">
             <section id="tipo-cuenta" aria-labelledby="role-section-title">
               <h2 class="section-title" id="role-section-title">Tipo de cuenta</h2>
-              <p class="form-note">La función de cada opción aparece debajo para evitar confusiones.</p>
-              <div class="role-selector" style="margin-top:12px">
-                <button class="role-choice" type="button" data-profile-role="actor" aria-pressed="false">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
-                  <span><strong>Artista</strong><span>Busca audiciones y envía su portafolio.</span></span>
-                </button>
-                <button class="role-choice" type="button" data-profile-role="producer" aria-pressed="false">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 21V4h11v17M15 9h5v12M8 8h3M8 12h3M8 16h3M2 21h20"></path></svg>
-                  <span><strong>Productora</strong><span>Publica convocatorias y evalúa candidatos.</span></span>
-                </button>
+              <p class="form-note">El tipo de cuenta se definió al registrarte y no puede cambiarse desde el perfil.</p>
+              <div class="card" style="margin-top:12px;padding:18px" aria-live="polite">
+                <strong id="account-type-label">Tipo de cuenta</strong>
+                <p class="form-note" id="account-type-description" style="margin-top:4px"></p>
               </div>
             </section>
 
