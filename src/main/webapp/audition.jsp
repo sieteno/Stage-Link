@@ -1,4 +1,6 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ page import="stagelink.Database" %>
+<%@ page import="stagelink.Web" %>
 <%@ page import="java.sql.*"%>
 <%
     // =========================================================================
@@ -12,20 +14,15 @@
 
     // Verificamos que se haya recibido un ID válido en la petición HTTP
     if (idAudicion != null && !idAudicion.isEmpty()) {
-        // Parámetros de conexión locales para XAMPP
-        String url = "jdbc:mysql://localhost:3306/stagelink?useSSL=false&serverTimezone=UTC";
-        String usuarioDb = "root";
-        String passwordDb = "";
 
         try {
             // Cargamos explícitamente el Driver JDBC de MySQL configurado en Maven
-            Class.forName("com.mysql.cj.jdbc.Driver");
             
             // Establecemos la conexión con la base de datos 'stagelink'
-            Connection conn = DriverManager.getConnection(url, usuarioDb, passwordDb);
+            Connection conn = Database.open();
             
             // Preparamos la sentencia SQL segura utilizando parámetros (?) para evitar inyecciones SQL
-            String sql = "SELECT * FROM audicion WHERE id = ?";
+            String sql = "SELECT * FROM audicion WHERE id = ? AND publicada = TRUE";
             PreparedStatement stmt = conn.prepareStatement(sql);
             stmt.setString(1, idAudicion);
             
@@ -39,11 +36,10 @@
             }
             
             // Cerramos la conexión para liberar recursos del servidor Tomcat
-            conn.close();
         } catch (Exception e) {
             // En caso de fallo técnico, mostramos un mensaje de error controlado en las variables
             tituloAudicion = "Error al cargar la audición";
-            descripcionAudicion = "Detalle técnico del error: " + e.getMessage();
+            application.log("No se pudo cargar la audición.", e);
         }
     }
 %>
@@ -66,7 +62,7 @@
 <!-- Script local de la interfaz (Corregido con ContextPath) -->
 <script src="${pageContext.request.contextPath}/javascript/app.js" defer></script>
 </head>
-<body data-page="audition">
+<body data-page="audition" <%= Web.shellAttributes(session) %>>
 	<!-- Enlace de accesibilidad para saltar directamente al contenido principal -->
 	<a class="skip-link" href="#main-content">Saltar al contenido</a>
 
@@ -83,10 +79,10 @@
 				<div id="audition-detail">
 					<!-- 
               Impresión dinámica de los datos obtenidos de MySQL 
-              utilizando etiquetas de expresión de JSP (<%= %>)
+              utilizando expresiones JSP
             -->
-					<h1><%= tituloAudicion.isEmpty() ? "Detalle de la Convocatoria" : tituloAudicion %></h1>
-					<p><%= descripcionAudicion %></p>
+					<h1><%= Web.html(tituloAudicion.isEmpty() ? "Detalle de la Convocatoria" : tituloAudicion) %></h1>
+					<p><%= Web.html(descripcionAudicion) %></p>
 				</div>
 			</main>
 

@@ -2,7 +2,6 @@
   "use strict";
 
   const message = document.querySelector("#auth-message");
-  const connectionNote = document.querySelector("#connection-note");
 
   function showMessage(text, type = "info") {
     if (!message) return;
@@ -18,12 +17,11 @@
     delete message.dataset.type;
   }
 
-  function showPanel(mode) {
-    clearMessage();
+  function showPanel(mode, clear = true) {
+    if (clear) clearMessage();
     const panels = {
       login: document.querySelector("#login-panel"),
-      register: document.querySelector("#register-panel"),
-      recovery: document.querySelector("#recovery-panel")
+      register: document.querySelector("#register-panel")
     };
     Object.entries(panels).forEach(([key, panel]) => {
       if (panel) panel.hidden = key !== mode;
@@ -37,22 +35,15 @@
   }
 
   function initAccess() {
-    if (connectionNote) {
-      connectionNote.textContent = "Conexión local activa con XAMPP / MySQL.";
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    const initialMode = params.get("mode") === "register" ? "register" : "login";
-    const requestedRole = params.get("role") === "producer" ? "producer" : "actor";
+    const initialMode = document.body.dataset.mode || "login";
+    const requestedRole = document.body.dataset.role || "actor";
     const roleField = document.querySelector('#register-panel [name="role"]');
     if (roleField) roleField.value = requestedRole;
-    showPanel(initialMode);
+    showPanel(initialMode, false);
 
     document.querySelectorAll("[data-auth-mode]").forEach((tab) => {
       tab.addEventListener("click", () => showPanel(tab.dataset.authMode));
     });
-    document.querySelector("#forgot-password")?.addEventListener("click", () => showPanel("recovery"));
-    document.querySelector("[data-back-login]")?.addEventListener("click", () => showPanel("login"));
 
     const registerForm = document.querySelector("#register-panel");
     registerForm?.addEventListener("submit", (event) => {
@@ -68,9 +59,6 @@
 
   function initReset() {
     const form = document.querySelector("#reset-password-form");
-    if (connectionNote) {
-      connectionNote.textContent = "Restablecimiento de contraseña local.";
-    }
 
     form?.addEventListener("submit", (event) => {
       const password = form.querySelector('[name="password"]')?.value;

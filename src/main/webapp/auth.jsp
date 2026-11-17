@@ -1,83 +1,95 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ page import="java.sql.*"%>
+<%@ page import="stagelink.Database,stagelink.Passwords,stagelink.Web" %>
 <%
-    // =========================================================================
-    // LÓGICA DE SERVIDOR (JAVA / JDBC)
-    // Procesamos las peticiones POST cuando el usuario envía un formulario
-    // =========================================================================
     String mensajeFeedback = "";
-    String tipoMensaje = ""; // "success" o "error"
+    String tipoMensaje = "";
+    String panel = "register".equals(request.getParameter("mode")) ? "register" : "login";
+    String selectedRole = "producer".equals(request.getParameter("role")) ? "producer" : "actor";
 
-    if ("POST".equalsIgnoreCase(request.getMethod())) {
-        // Identificamos qué formulario se envió revisando los parámetros recibidos
-        String accion = request.getParameter("accion"); // Puede ser "login" o "register"
-
-        // Datos de conexión local a la base de datos 'stagelink' en XAMPP
-        String url = "jdbc:mysql://localhost:3306/stagelink?useSSL=false&serverTimezone=UTC";
-        String usuarioDb = "root";
-        String passwordDb = "";
-
+    if ("POST".equals(request.getMethod())) {
+        String action = request.getParameter("accion");
+        if ("logout".equals(action)) {
+            session.invalidate();
+            response.sendRedirect("index.jsp");
+            return;
+        }
+        String email = Web.field(request, "email").toLowerCase(java.util.Locale.ROOT);
+        String password = request.getParameter("password");
         try {
-            // Cargamos el driver JDBC de MySQL configurado en Maven
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            Connection conn = DriverManager.getConnection(url, usuarioDb, passwordDb);
-
-            if ("login".equals(accion)) {
-                // -------------------------------------------------------------
-                // PROCESO DE INICIO DE SESIÓN
-                // -------------------------------------------------------------
-                String email = request.getParameter("email");
-                String password = request.getParameter("password");
-
-                String sql = "SELECT * FROM usuario WHERE correo = ? AND hash_contrasena = ?";
-                PreparedStatement stmt = conn.prepareStatement(sql);
-                stmt.setString(1, email);
-                stmt.setString(2, password);
-                ResultSet rs = stmt.executeQuery();
-
-                if (rs.next()) {
-                    // Si las credenciales son correctas, redirigimos al feed principal
-                    response.sendRedirect("feed.jsp");
-                    return;
-                } else {
-                    mensajeFeedback = "El correo o la contraseña no son correctos.";
-                    tipoMensaje = "error";
+            if ("login".equals(action)) {
+                panel = "login";
+                String sql = "SELECT id, nombre, rol, hash_contrasena FROM usuario WHERE correo = ?";
+                try (Connection conn = Database.open(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setString(1, email);
+                    int id = 0;
+                    String name = null;
+                    String role = null;
+                    String stored = null;
+                    try (ResultSet user = stmt.executeQuery()) {
+                        if (user.next()) {
+                            id = user.getInt("id");
+                            name = user.getString("nombre");
+                            role = user.getString("rol");
+                            stored = user.getString("hash_contrasena");
+                        }
+                    }
+                    if (id > 0 && Passwords.matches(password, stored)) {
+                        if (Passwords.isLegacy(stored)) {
+                            try (PreparedStatement upgrade = conn.prepareStatement(
+                                    "UPDATE usuario SET hash_contrasena = ? WHERE id = ? AND hash_contrasena = ?")) {
+                                upgrade.setString(1, Passwords.hash(password));
+                                upgrade.setInt(2, id);
+                                upgrade.setString(3, stored);
+                                upgrade.executeUpdate();
+                            }
+                        }
+                        request.changeSessionId();
+                        session.removeAttribute("csrf");
+                        session.setAttribute("userId", id);
+                        session.setAttribute("userRole", role);
+                        session.setAttribute("userName", name);
+                        response.sendRedirect("feed.jsp");
+                        return;
+                    }
                 }
-                stmt.close();
+                mensajeFeedback = "El correo o la contraseña no son correctos.";
+                tipoMensaje = "error";
+            } else if ("register".equals(action)) {
+                panel = "register";
+                String name = Web.field(request, "displayName");
+                String role = Web.field(request, "role");
+                selectedRole = "producer".equals(role) ? "producer" : "actor";
 
-            } else if ("register".equals(accion)) {
-                // -------------------------------------------------------------
-                // PROCESO DE CREACIÓN DE CUENTA (REGISTRO)
-                // -------------------------------------------------------------
-                String displayName = request.getParameter("displayName");
-                String role = request.getParameter("role");
-                String email = request.getParameter("email");
-                String password = request.getParameter("password");
-                String passwordConfirm = request.getParameter("passwordConfirm");
-
-                // Verificamos que las contraseñas coincidan
-                if (!password.equals(passwordConfirm)) {
-                    mensajeFeedback = "Las contraseñas no coinciden.";
+                if (name.isEmpty() || name.length() > 80 || email.length() > 254
+                        || !email.matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+")
+                        || (!"actor".equals(role) && !"producer".equals(role))) {
+                    mensajeFeedback = "Revisa el nombre, el correo y el tipo de cuenta.";
+                    tipoMensaje = "error";
+                } else if (!Passwords.validNewPassword(password)
+                        || !password.equals(request.getParameter("passwordConfirm"))) {
+                    mensajeFeedback = "Las contraseñas deben coincidir y tener entre 8 y 128 caracteres.";
                     tipoMensaje = "error";
                 } else {
-                    // Insertamos el nuevo usuario en la base de datos local
                     String sql = "INSERT INTO usuario (nombre, rol, correo, hash_contrasena) VALUES (?, ?, ?, ?)";
-                    PreparedStatement stmt = conn.prepareStatement(sql);
-                    stmt.setString(1, displayName);
-                    stmt.setString(2, role);
-                    stmt.setString(3, email);
-                    stmt.setString(4, password); // Nota: idealmente va con hash, pero usamos el campo directo por ahora
-                    stmt.executeUpdate();
-
+                    try (Connection conn = Database.open(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+                        stmt.setString(1, name);
+                        stmt.setString(2, role);
+                        stmt.setString(3, email);
+                        stmt.setString(4, Passwords.hash(password));
+                        stmt.executeUpdate();
+                    }
+                    panel = "login";
                     mensajeFeedback = "Cuenta creada con éxito. Ya puedes iniciar sesión.";
                     tipoMensaje = "success";
-                    stmt.close();
                 }
             }
-
-            conn.close();
-        } catch (Exception e) {
-            mensajeFeedback = "Error en el servidor: " + e.getMessage();
+        } catch (SQLIntegrityConstraintViolationException error) {
+            mensajeFeedback = "El correo ya está registrado.";
+            tipoMensaje = "error";
+        } catch (Exception error) {
+            application.log("Error de autenticación en StageLink.", error);
+            mensajeFeedback = "El servicio de cuentas no está disponible en este momento.";
             tipoMensaje = "error";
         }
     }
@@ -96,12 +108,12 @@
 	href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230a0a0a'/%3E%3Cpath d='M18 18h30v8H27v7h17v8H27v10h-9z' fill='white'/%3E%3C/svg%3E">
 
 <!-- Hojas de estilos generales (ajustamos la ruta relativa '../css/styles.css') -->
-<link rel="stylesheet" href="../css/styles.css">
+<link rel="stylesheet" href="${pageContext.request.contextPath}/css/styles.css">
 
 <!-- Ya no usamos Supabase ni backend.js en la nube; solo tu JS local de interfaz si se requiere -->
-<script src="../javascript/auth.js" defer></script>
+<script src="${pageContext.request.contextPath}/javascript/auth.js" defer></script>
 </head>
-<body data-auth-page="access">
+<body data-auth-page="access" data-mode="<%= panel %>" data-role="<%= selectedRole %>">
 	<main class="welcome-page">
 		<div class="welcome-shell">
 
@@ -132,14 +144,14 @@
 						cuenta</button>
 				</div>
 
-				<!-- 
-          Contenedor dinámico de mensajes. 
+				<!--
+          Contenedor dinámico de mensajes.
           Si Java procesó un error o éxito, se muestra aquí automáticamente.
         -->
 				<div class="auth-message" id="auth-message" role="status"
 					aria-live="polite" <% if(mensajeFeedback.isEmpty()) { %> hidden
 					<% } %> data-type="<%= tipoMensaje %>">
-					<%= mensajeFeedback %>
+					<%= Web.html(mensajeFeedback) %>
 				</div>
 
 				<!-- 1. FORMULARIO DE INICIO DE SESIÓN -->
@@ -147,6 +159,7 @@
 					aria-labelledby="login-tab" action="auth.jsp" method="POST">
 					<!-- Campo oculto para indicar al servidor que esta petición es un login -->
 					<input type="hidden" name="accion" value="login">
+					<%= Web.csrfInput(session) %>
 
 					<h2 id="auth-title">Bienvenido de vuelta</h2>
 					<p>Accede con el correo de tu cuenta.</p>
@@ -155,12 +168,11 @@
 								electrónico</span><input class="input" type="email" name="email"
 							required autocomplete="email"></label> <label class="field"><span
 							class="field-label">Contraseña</span><input class="input"
-							type="password" name="password" required minlength="8"
+							type="password" name="password" required
 							autocomplete="current-password"></label>
 					</div>
 					<button class="button" type="submit">Iniciar sesión</button>
-					<button class="text-button" id="forgot-password" type="button">Olvidé
-						mi contraseña</button>
+
 				</form>
 
 				<!-- 2. FORMULARIO DE CREACIÓN DE CUENTA (REGISTRO) -->
@@ -169,6 +181,7 @@
 					hidden>
 					<!-- Campo oculto para indicar al servidor que esta petición es un registro -->
 					<input type="hidden" name="accion" value="register">
+					<%= Web.csrfInput(session) %>
 
 					<h2>Crear una cuenta</h2>
 					<p>Elige el tipo de cuenta que utilizarás. No podrá cambiarse
@@ -193,25 +206,6 @@
 					</div>
 					<button class="button" type="submit">Crear cuenta</button>
 				</form>
-
-				<!-- 3. FORMULARIO DE RECUPERACIÓN DE CONTRASEÑA -->
-				<form class="auth-panel" id="recovery-panel"
-					aria-labelledby="recovery-title" hidden>
-					<h2 id="recovery-title">Recuperar contraseña</h2>
-					<p>Te enviaremos un enlace seguro para crear una nueva.</p>
-					<div class="auth-fields">
-						<label class="field"><span class="field-label">Correo
-								electrónico</span><input class="input" type="email" name="email"
-							required autocomplete="email"></label>
-					</div>
-					<button class="button" type="submit">Enviar enlace</button>
-					<button class="text-button" data-back-login type="button">Volver
-						a iniciar sesión</button>
-				</form>
-
-				<!-- Nota informativa fija en la parte inferior -->
-				<p class="demo-note" id="connection-note">Conexión activa con
-					base de datos MySQL local.</p>
 			</section>
 		</div>
 	</main>

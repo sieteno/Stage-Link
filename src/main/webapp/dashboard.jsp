@@ -1,4 +1,6 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ page import="stagelink.Database" %>
+<%@ page import="stagelink.Web" %>
 <%@ page import="java.sql.*"%>
 <%
     // =========================================================================
@@ -8,15 +10,10 @@
     // =========================================================================
     String errorDashboard = "";
     
-    // Parámetros de conexión local a la base de datos 'stagelink' en XAMPP
-    String url = "jdbc:mysql://localhost:3306/stagelink?useSSL=false&serverTimezone=UTC";
-    String usuarioDb = "root";
-    String passwordDb = "";
 
     try {
         // Cargamos el Driver JDBC de MySQL configurado en Maven
-        Class.forName("com.mysql.cj.jdbc.Driver");
-        Connection conn = DriverManager.getConnection(url, usuarioDb, passwordDb);
+        Connection conn = Database.open();
 
         // Ejemplo de consulta general para verificar o precargar datos del panel
         // (Por ejemplo, podríamos contar el total de audiciones o postulaciones)
@@ -31,10 +28,10 @@
         
         rs.close();
         stmt.close();
-        conn.close();
 
     } catch (Exception e) {
-        errorDashboard = "No se pudieron cargar los datos del panel: " + e.getMessage();
+        application.log("No se pudo cargar el panel.", e);
+        errorDashboard = "No se pudieron cargar los datos del panel.";
     }
 %>
 <!doctype html>
@@ -59,7 +56,7 @@
 <script src="${pageContext.request.contextPath}/javascript/producer-data.js" defer></script>
 <script src="${pageContext.request.contextPath}/javascript/producer-dashboard.js" defer></script>
 </head>
-<body data-page="dashboard">
+<body data-page="dashboard" <%= Web.shellAttributes(session) %>>
 	<!-- Enlace de accesibilidad para saltar directamente al contenido -->
 	<a class="skip-link" href="#main-content">Saltar al contenido</a>
 
@@ -77,7 +74,7 @@
 				<% if (!errorDashboard.isEmpty()) { %>
 				<div class="auth-message" data-type="error"
 					style="margin-bottom: 20px;">
-					<%= errorDashboard %>
+					<%= Web.html(errorDashboard) %>
 				</div>
 				<% } %>
 
@@ -119,7 +116,9 @@
 					<div class="auth-message" id="producer-sub-notice" data-type="info"
 						style="margin-bottom: 20px" hidden></div>
 
-					<div class="dashboard-grid">
+					<p class="auth-message" id="audition-status-error" data-type="error" role="alert" hidden></p>
+
+				<div class="dashboard-grid">
 						<!-- Columna izquierda: Listado de convocatorias creadas por la productora -->
 						<aside>
 							<h2 class="section-title">Mis convocatorias</h2>

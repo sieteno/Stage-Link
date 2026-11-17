@@ -321,7 +321,7 @@
       </div>`;
   }
 
-  function publish() {
+  async function publish() {
     if (publishing) return;
 
     // Revalidamos todos los pasos por si se editó algo al retroceder
@@ -341,7 +341,7 @@
       submitButton.textContent = "Publicando…";
     }
 
-    Data.saveAudition({
+    const audition = {
       title: fieldValue("title"),
       type: fieldValue("type"),
       description: fieldValue("description"),
@@ -356,9 +356,23 @@
       materials: selectedMaterials(),
       roles,
       status: "published"
-    });
-
-    window.location.href = "dashboard.jsp";
+    };
+    const errorMessage = $("#create-error");
+    errorMessage.hidden = true;
+    try {
+      const id = await App.postAudition(new FormData(form));
+      Data.saveAudition({ ...audition, id: "db-" + id });
+      window.location.href = "dashboard.jsp?audition=db-" + id;
+    } catch (error) {
+      errorMessage.textContent = error.message;
+      errorMessage.hidden = false;
+      errorMessage.scrollIntoView({ block: "center" });
+      publishing = false;
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = "Publicar convocatoria";
+      }
+    }
   }
 
   // ---------------------------------------------------------------------

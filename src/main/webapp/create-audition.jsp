@@ -1,67 +1,106 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ page import="stagelink.Database" %>
+<%@ page import="stagelink.Web" %>
 <%@ page import="java.sql.*"%>
 <%
-    // =========================================================================
-    // 1. LÓGICA DE SERVIDOR (JAVA / JDBC) - CREAR CONVOCATORIA
-    // Procesamos el formulario cuando la productora hace clic en "Publicar"
-    // =========================================================================
     String mensajeFeedback = "";
-    String tipoMensaje = ""; // "success" o "error"
+    String tipoMensaje = "";
 
-    if ("POST".equalsIgnoreCase(request.getMethod())) {
-        // Capturamos los campos principales del proyecto y la logística
-        String title = request.getParameter("title");
-        String type = request.getParameter("type");
-        String description = request.getParameter("description");
-        String compensationType = request.getParameter("compensationType");
-        String compensation = request.getParameter("compensation");
-        String requirements = request.getParameter("requirements");
-        
-        String location = request.getParameter("location");
-        String district = request.getParameter("district");
-        String deadline = request.getParameter("deadline");
-        String date = request.getParameter("date");
-        String time = request.getParameter("time");
+    if ("POST".equals(request.getMethod())) {
+        boolean json = "application/json".equals(request.getHeader("Accept"));
+        int userId = Web.userId(session);
+        try (Connection conn = Database.open()) {
+            String idField = Web.field(request, "id");
+            int id = idField.isEmpty() ? 0 : Integer.parseInt(idField);
+            if (!idField.isEmpty() && id <= 0) {
+                throw new IllegalArgumentException();
+            }
+            String status = Web.field(request, "statusAction");
+            if (!status.isEmpty()) {
+                if (id == 0 || (!"published".equals(status) && !"closed".equals(status))) {
+                    throw new IllegalArgumentException();
+                }
+                try (PreparedStatement stmt = conn.prepareStatement(
+                        "UPDATE audicion SET publicada = ? WHERE id = ? AND productora_id = ?")) {
+                    stmt.setBoolean(1, "published".equals(status));
+                    stmt.setInt(2, id);
+                    stmt.setInt(3, userId);
+                    if (stmt.executeUpdate() == 0) {
+                        response.sendError(404);
+                        return;
+                    }
+                }
+            } else {
+                String title = Web.field(request, "title");
+                String type = Web.field(request, "type");
+                String description = Web.field(request, "description");
+                if (title.isEmpty() || title.length() > 200 || type.isEmpty() || type.length() > 80
+                        || description.isEmpty() || description.length() > 12_000) {
+                    throw new IllegalArgumentException();
+                }
+                java.time.LocalDate deadline = java.time.LocalDate.parse(Web.field(request, "deadline"));
+                java.time.LocalDate auditionDate = java.time.LocalDate.parse(Web.field(request, "date"));
+                java.time.LocalTime time = java.time.LocalTime.parse(Web.field(request, "time"));
+                if (auditionDate.isBefore(deadline)) {
+                    throw new IllegalArgumentException();
+                }
+                String insert = "INSERT INTO audicion (titulo, tipo, descripcion, tipo_compensacion, detalle_pago, "
+                        + "requisitos, lugar, distrito, fecha_limite, fecha_audicion, hora, productora_id)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                String update = "UPDATE audicion SET titulo = ?, tipo = ?, descripcion = ?, tipo_compensacion = ?, "
+                        + "detalle_pago = ?, requisitos = ?, lugar = ?, distrito = ?, fecha_limite = ?, fecha_audicion = ?, "
+                        + "hora = ? WHERE productora_id = ? AND id = ?";
+                try (PreparedStatement stmt = conn.prepareStatement(id == 0 ? insert : update, Statement.RETURN_GENERATED_KEYS)) {
+                    stmt.setString(1, title);
+                    stmt.setString(2, type);
+                    stmt.setString(3, description);
+                    stmt.setString(4, Web.field(request, "compensationType"));
+                    stmt.setString(5, Web.field(request, "compensation"));
+                    stmt.setString(6, Web.field(request, "requirements"));
+                    stmt.setString(7, Web.field(request, "location"));
+                    stmt.setString(8, Web.field(request, "district"));
+                    stmt.setDate(9, java.sql.Date.valueOf(deadline));
+                    stmt.setDate(10, java.sql.Date.valueOf(auditionDate));
+                    stmt.setTime(11, java.sql.Time.valueOf(time));
+                    stmt.setInt(12, userId);
+                    if (id > 0) {
+                        stmt.setInt(13, id);
+                    }
+                    if (stmt.executeUpdate() == 0) {
+                        response.sendError(404);
+                        return;
+                    }
+                    if (id == 0) {
+                        try (ResultSet keys = stmt.getGeneratedKeys()) {
+                            if (keys.next()) {
+                                id = keys.getInt(1);
+                            }
+                        }
+                    }
+                }
+            }
 
-        // Parámetros de conexión local a XAMPP
-        String url = "jdbc:mysql://localhost:3306/stagelink?useSSL=false&serverTimezone=UTC";
-        String usuarioDb = "root";
-        String passwordDb = "";
-
-        try {
-            // Cargamos el Driver JDBC de MySQL configurado en el pom.xml
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            Connection conn = DriverManager.getConnection(url, usuarioDb, passwordDb);
-
-            // Sentencia SQL para insertar la convocatoria en la base de datos
-            // (Nota: Asegúrate de que los nombres de las columnas coincidan con tu tabla en MySQL)
-            String sql = "INSERT INTO audicion (titulo, tipo, descripcion, tipo_compensacion, detalle_pago, requisitos, lugar, distrito, fecha_limite, fecha_audicion, hora) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            
-            PreparedStatement stmt = conn.prepareStatement(sql);
-            stmt.setString(1, title);
-            stmt.setString(2, type);
-            stmt.setString(3, description);
-            stmt.setString(4, compensationType);
-            stmt.setString(5, compensation);
-            stmt.setString(6, requirements);
-            stmt.setString(7, location);
-            stmt.setString(8, district);
-            stmt.setString(9, deadline);
-            stmt.setString(10, date);
-            stmt.setString(11, time);
-            
-            stmt.executeUpdate();
-            stmt.close();
-            conn.close();
-
-            // Redirigimos al feed general tras publicar con éxito
-            response.sendRedirect("feed.jsp");
+            if (json) {
+                response.setContentType("application/json; charset=UTF-8");
+                out.print("{\"id\":" + id + "}");
+            } else {
+                response.sendRedirect("feed.jsp");
+            }
             return;
-
-        } catch (Exception e) {
-            mensajeFeedback = "Error al publicar la convocatoria: " + e.getMessage();
-            tipoMensaje = "error";
+        } catch (IllegalArgumentException | java.time.DateTimeException error) {
+            mensajeFeedback = "Revisa el título, la descripción y las fechas de la convocatoria.";
+            response.setStatus(400);
+        } catch (SQLException error) {
+            application.log("No se pudo guardar la convocatoria.", error);
+            mensajeFeedback = "No se pudo guardar la convocatoria en MySQL.";
+            response.setStatus(503);
         }
+        if (json) {
+            response.setContentType("application/json; charset=UTF-8");
+            out.print("{\"error\":\"" + mensajeFeedback + "\"}");
+            return;
+        }
+        tipoMensaje = "error";
     }
 %>
 <!doctype html>
@@ -86,7 +125,7 @@
 <script src="${pageContext.request.contextPath}/javascript/producer-data.js" defer></script>
 <script src="${pageContext.request.contextPath}/javascript/producer-create.js" defer></script>
 </head>
-<body data-page="create">
+<body data-page="create" <%= Web.shellAttributes(session) %>>
 	<!-- Enlace de accesibilidad para saltar directamente al contenido -->
 	<a class="skip-link" href="#main-content">Saltar al contenido</a>
 
@@ -113,7 +152,7 @@
 				<% if (!mensajeFeedback.isEmpty()) { %>
 				<div class="auth-message" data-type="<%= tipoMensaje %>"
 					style="margin-bottom: 20px;">
-					<%= mensajeFeedback %>
+					<%= Web.html(mensajeFeedback) %>
 				</div>
 				<% } %>
 
@@ -180,6 +219,7 @@
 
 				<!-- Contenedor principal del formulario de creación multipasos -->
 				<section id="create-form-container">
+					<div class="auth-message" id="create-error" data-type="error" role="alert" hidden></div>
 					<ol class="stepper" aria-label="Progreso de la convocatoria">
 						<li class="step is-active"><span class="step-number">1</span><span
 							class="step-label">Proyecto</span></li>
@@ -194,6 +234,7 @@
 					<!-- El formulario envía los datos mediante POST a este mismo archivo JSP -->
 					<form class="card" id="create-audition-form"
 						action="create-audition.jsp" method="POST">
+						<%= Web.csrfInput(session) %>
 
 						<!-- PASO 1: Información general del proyecto -->
 						<section class="form-step" data-step="0">

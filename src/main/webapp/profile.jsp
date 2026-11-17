@@ -1,50 +1,56 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ page import="java.sql.*"%>
+<%@ page import="stagelink.Database,stagelink.Web" %>
 <%
-    // =========================================================================
-    // LÓGICA DE SERVIDOR (JAVA / JDBC) - PERFIL DE USUARIO
-    // Procesamos la actualización de datos del perfil cuando el usuario 
-    // hace clic en "Guardar cambios" y enviamos la petición por POST.
-    // =========================================================================
     String mensajeFeedback = "";
-    String tipoMensaje = ""; // "success" o "error"
-
-    // Parámetros de conexión local a la base de datos 'stagelink' en XAMPP
-    String url = "jdbc:mysql://localhost:3306/stagelink?useSSL=false&serverTimezone=UTC";
-    String usuarioDb = "root";
-    String passwordDb = "";
-
-    // Si el usuario envía la actualización del perfil mediante POST
-    if ("POST".equalsIgnoreCase(request.getMethod())) {
-        String displayName = request.getParameter("displayName");
-        String city = request.getParameter("city");
-        String bio = request.getParameter("bio");
-        String phone = request.getParameter("phone");
-
-        try {
-            // Cargamos el Driver JDBC configurado en Maven
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            Connection conn = DriverManager.getConnection(url, usuarioDb, passwordDb);
-
-            // Sentencia SQL para actualizar la información principal del usuario
-            // (Nota: Ajusta el identificador del usuario según tu sesión activa o ID en la BD)
-            String sql = "UPDATE usuario SET nombre = ?, ciudad = ?, biografia = ?, telefono = ? WHERE id = 1";
-            PreparedStatement stmt = conn.prepareStatement(sql);
-            stmt.setString(1, displayName);
-            stmt.setString(2, city);
-            stmt.setString(3, bio);
-            stmt.setString(4, phone);
-            
-            stmt.executeUpdate();
-            stmt.close();
-            conn.close();
-
-            mensajeFeedback = "Perfil actualizado correctamente en la base de datos.";
-            tipoMensaje = "success";
-        } catch (Exception e) {
-            mensajeFeedback = "Error al actualizar el perfil: " + e.getMessage();
-            tipoMensaje = "error";
+    String tipoMensaje = "";
+    int userId = Web.userId(session);
+    boolean esProductora = Web.producer(session);
+    String nombre = "";
+    String ciudad = "";
+    String biografia = "";
+    String telefono = "";
+    try (Connection conn = Database.open()) {
+        if ("POST".equals(request.getMethod())) {
+            String name = Web.field(request, "displayName");
+            String city = Web.field(request, "city");
+            String bio = Web.field(request, "bio");
+            String phone = Web.field(request, "phone");
+            if (name.isEmpty() || name.length() > 80 || city.length() > 120 || phone.length() > 40
+                    || bio.length() > 12_000) {
+                mensajeFeedback = "Revisa el nombre y el tamaño de los datos del perfil.";
+                tipoMensaje = "error";
+            } else {
+                String sql = "UPDATE usuario SET nombre = ?, ciudad = ?, biografia = ?, telefono = ? WHERE id = ?";
+                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setString(1, name);
+                    stmt.setString(2, city);
+                    stmt.setString(3, bio);
+                    stmt.setString(4, phone);
+                    stmt.setInt(5, userId);
+                    stmt.executeUpdate();
+                }
+                session.setAttribute("userName", name);
+                mensajeFeedback = "Perfil actualizado.";
+                tipoMensaje = "success";
+            }
         }
+        try (PreparedStatement stmt = conn.prepareStatement(
+                "SELECT nombre, ciudad, biografia, telefono FROM usuario WHERE id = ?")) {
+            stmt.setInt(1, userId);
+            try (ResultSet user = stmt.executeQuery()) {
+                if (user.next()) {
+                    nombre = user.getString("nombre");
+                    ciudad = user.getString("ciudad");
+                    biografia = user.getString("biografia");
+                    telefono = user.getString("telefono");
+                }
+            }
+        }
+    } catch (SQLException error) {
+        application.log("Error en el perfil de StageLink.", error);
+        mensajeFeedback = "El perfil no está disponible en este momento.";
+        tipoMensaje = "error";
     }
 %>
 <!doctype html>
@@ -69,13 +75,14 @@
 <script src="${pageContext.request.contextPath}/javascript/producer-data.js" defer></script>
 <script src="${pageContext.request.contextPath}/javascript/producer-profile.js" defer></script>
 </head>
-<body data-page="profile">
+<body data-page="profile" <%= Web.shellAttributes(session) %>>
 	<!-- Enlace de accesibilidad para saltar directamente al contenido principal -->
 	<a class="skip-link" href="#main-content">Saltar al contenido</a>
 
 	<div class="app-frame">
 		<!-- Barra lateral de navegación compartida -->
-		<aside class="sidebar" id="sidebar"></aside>
+		<aside class="sidebar" id="sidebar">	<a class="text-button" href="reset-password.jsp">Cambiar contraseña</a>
+					</aside>
 
 		<div class="main-column">
 			<!-- Barra superior -->
@@ -94,7 +101,7 @@
 				<% if (!mensajeFeedback.isEmpty()) { %>
 				<div class="auth-message" data-type="<%= tipoMensaje %>"
 					style="margin-bottom: 20px;">
-					<%= mensajeFeedback %>
+					<%= Web.html(mensajeFeedback) %>
 				</div>
 				<% } %>
 
@@ -107,8 +114,8 @@
 					<aside class="card panel profile-card">
 						<div class="profile-avatar-large" id="profile-avatar-preview"
 							aria-live="polite"></div>
-						<h2 id="profile-preview-name">Nombre de perfil</h2>
-						<p id="profile-preview-role">Artista escénico</p>
+						<h2 id="profile-preview-name"><%= Web.html(nombre) %></h2>
+						<p id="profile-preview-role"><%= esProductora ? "Productora" : "Artista escénico" %></p>
 						<label class="button secondary" for="profile-avatar-input">Cambiar
 							foto</label> <input class="file-input" id="profile-avatar-input"
 							type="file" accept="image/png,image/jpeg,image/webp">
@@ -117,6 +124,7 @@
 					<!-- Columna derecha: Formulario completo de datos del perfil -->
 					<form class="card panel" id="profile-form" action="profile.jsp"
 						method="POST">
+						<%= Web.csrfInput(session) %>
 
 						<!-- Tipo de cuenta (Informativo / Bloqueado) -->
 						<section id="tipo-cuenta" aria-labelledby="role-section-title">
@@ -126,7 +134,7 @@
 								registrarte y no puede cambiarse desde el perfil.</p>
 							<div class="card" style="margin-top: 12px; padding: 18px"
 								aria-live="polite">
-								<strong id="account-type-label">Tipo de cuenta</strong>
+								<strong id="account-type-label"><%= esProductora ? "Productora / compañía" : "Artista escénico" %></strong>
 								<p class="form-note" id="account-type-description"
 									style="margin-top: 4px"></p>
 							</div>
@@ -147,19 +155,19 @@
 								principal</h2>
 							<div class="form-grid">
 								<label class="field"><span class="field-label">Nombre
-										visible</span><input class="input" name="displayName" required
+										visible</span><input class="input" name="displayName" value="<%= Web.html(nombre) %>" maxlength="80" required
 									autocomplete="name"></label> <label class="field"><span
 									class="field-label">Ciudad</span><input class="input"
-									name="city" required autocomplete="address-level2"></label> <label
+									name="city" value="<%= Web.html(ciudad) %>" maxlength="120" required autocomplete="address-level2"></label> <label
 									class="field span-2"><span class="field-label">Biografía</span>
-								<textarea class="textarea" name="bio" required></textarea></label> <label
+								<textarea class="textarea" name="bio" required><%= Web.html(biografia) %></textarea></label> <label
 									class="field"><span class="field-label">Teléfono</span><input
-									class="input" name="phone" autocomplete="tel"></label>
+									class="input" name="phone" value="<%= Web.html(telefono) %>" maxlength="40" autocomplete="tel"></label>
 							</div>
 						</section>
 
 						<!-- Campos específicos para Artistas -->
-						<section id="actor-fields" style="margin-top: 28px"
+						<section id="actor-fields" <%= esProductora ? "hidden" : "" %> style="margin-top: 28px"
 							aria-labelledby="actor-data-title">
 							<h2 class="section-title" id="actor-data-title">Información
 								artística</h2>

@@ -1,55 +1,47 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <%@ page import="java.sql.*"%>
+<%@ page import="stagelink.Database,stagelink.Passwords,stagelink.Web" %>
 <%
-    // =========================================================================
-    // LÓGICA DE SERVIDOR (JAVA / JDBC) - RESTABLECER CONTRASEÑA
-    // Procesamos la solicitud POST cuando el usuario ingresa y confirma 
-    // su nueva contraseña.
-    // =========================================================================
     String mensajeFeedback = "";
-    String tipoMensaje = ""; // "success" o "error"
-
-    // Parámetros de conexión local a la base de datos 'stagelink' en XAMPP
-    String url = "jdbc:mysql://localhost:3306/stagelink?useSSL=false&serverTimezone=UTC";
-    String usuarioDb = "root";
-    String passwordDb = "";
-
-    if ("POST".equalsIgnoreCase(request.getMethod())) {
-        String password = request.getParameter("password");
-        String passwordConfirm = request.getParameter("passwordConfirm");
-        // Nota: Puedes capturar el correo o token si viene oculto o por parámetro URL
-        String correo = request.getParameter("email"); 
-
-        // Verificamos que ambas contraseñas coincidan
-        if (password == null || !password.equals(passwordConfirm)) {
-            mensajeFeedback = "Las contraseñas no coinciden. Por favor, revísalas.";
+    String tipoMensaje = "";
+    if ("POST".equals(request.getMethod())) {
+        String actual = request.getParameter("currentPassword");
+        String nueva = request.getParameter("password");
+        if (!Passwords.validNewPassword(nueva) || !nueva.equals(request.getParameter("passwordConfirm"))) {
+            mensajeFeedback = "Las contraseñas deben coincidir y tener entre 8 y 128 caracteres.";
             tipoMensaje = "error";
         } else {
-            try {
-                // Cargamos el Driver JDBC de MySQL configurado en Maven
-                Class.forName("com.mysql.cj.jdbc.Driver");
-                Connection conn = DriverManager.getConnection(url, usuarioDb, passwordDb);
-
-                // Sentencia SQL para actualizar la contraseña del usuario en MySQL
-                String sql = "UPDATE usuario SET hash_contrasena = ? WHERE correo = ?";
-                PreparedStatement stmt = conn.prepareStatement(sql);
-                stmt.setString(1, password); // Idealmente con hash en producción
-                stmt.setString(2, correo != null ? correo : ""); // Identificador del usuario
-
-                int filasAfectadas = stmt.executeUpdate();
-                
-                if (filasAfectadas > 0) {
-                    mensajeFeedback = "Contraseña actualizada con éxito. Ya puedes iniciar sesión.";
-                    tipoMensaje = "success";
+            try (Connection conn = Database.open(); PreparedStatement query = conn.prepareStatement(
+                    "SELECT hash_contrasena FROM usuario WHERE id = ?")) {
+                int id = Web.userId(session);
+                query.setInt(1, id);
+                String guardada;
+                try (ResultSet usuario = query.executeQuery()) {
+                    guardada = usuario.next() ? usuario.getString("hash_contrasena") : null;
+                }
+                if (Passwords.matches(actual, guardada)) {
+                    try (PreparedStatement update = conn.prepareStatement(
+                            "UPDATE usuario SET hash_contrasena = ? WHERE id = ? AND hash_contrasena = ?")) {
+                        update.setString(1, Passwords.hash(nueva));
+                        update.setInt(2, id);
+                        update.setString(3, guardada);
+                        if (update.executeUpdate() == 1) {
+                            request.changeSessionId();
+                            session.removeAttribute("csrf");
+                            mensajeFeedback = "Contraseña actualizada.";
+                            tipoMensaje = "success";
+                        } else {
+                            mensajeFeedback = "Vuelve a ingresar tu contraseña actual.";
+                            tipoMensaje = "error";
+                        }
+                    }
                 } else {
-                    mensajeFeedback = "No se pudo actualizar la contraseña. El usuario no fue encontrado.";
+                    mensajeFeedback = "La contraseña actual no es correcta.";
                     tipoMensaje = "error";
                 }
-
-                stmt.close();
-                conn.close();
-            } catch (Exception e) {
-                mensajeFeedback = "Error en el servidor al actualizar la contraseña: " + e.getMessage();
+            } catch (Exception error) {
+                application.log("No se pudo cambiar la contraseña.", error);
+                mensajeFeedback = "No se pudo guardar la contraseña en este momento.";
                 tipoMensaje = "error";
             }
         }
@@ -69,10 +61,10 @@
 	href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230a0a0a'/%3E%3Cpath d='M18 18h30v8H27v7h17v8H27v10h-9z' fill='white'/%3E%3C/svg%3E">
 
 <!-- Hoja de estilos principal (ajustada con ruta relativa '../css/styles.css') -->
-<link rel="stylesheet" href="../css/styles.css">
+<link rel="stylesheet" href="${pageContext.request.contextPath}/css/styles.css">
 
 <!-- Script local de autenticación y validaciones visuales -->
-<script src="../javascript/auth.js" defer></script>
+<script src="${pageContext.request.contextPath}/javascript/auth.js" defer></script>
 </head>
 <body data-auth-page="reset">
 	<main class="welcome-page">
@@ -98,20 +90,18 @@
 				<div class="auth-message" id="auth-message" role="status"
 					aria-live="polite" <% if(mensajeFeedback.isEmpty()) { %> hidden
 					<% } %> data-type="<%= tipoMensaje %>">
-					<%= mensajeFeedback %>
+					<%= Web.html(mensajeFeedback) %>
 				</div>
 
 				<!-- Formulario que envía los datos mediante POST a este mismo archivo JSP -->
 				<form class="auth-panel" id="reset-password-form"
 					action="reset-password.jsp" method="POST">
 					<h2>Crear contraseña nueva</h2>
-					<p>El enlace recibido por correo autoriza este cambio.</p>
-
-					<!-- Campo oculto opcional para recibir el correo o token de recuperación -->
-					<input type="hidden" name="email"
-						value="<%= request.getParameter("email") != null ? request.getParameter("email") : "" %>">
+					<%= Web.csrfInput(session) %>
 
 					<div class="auth-fields">
+						<label class="field"><span class="field-label">Contraseña actual</span>
+							<input class="input" type="password" name="currentPassword" required autocomplete="current-password"></label>
 						<label class="field"> <span class="field-label">Nueva
 								contraseña</span> <input class="input" type="password" name="password"
 							required minlength="8" autocomplete="new-password">
@@ -123,10 +113,7 @@
 					</div>
 					<button class="button" type="submit">Guardar contraseña</button>
 				</form>
-
-				<!-- Indicador de estado de conexión local -->
-				<p class="demo-note" id="connection-note">Conexión activa con
-					base de datos MySQL local.</p>
+				<a class="text-button" href="profile.jsp">Volver a mi perfil</a>
 			</section>
 		</div>
 	</main>

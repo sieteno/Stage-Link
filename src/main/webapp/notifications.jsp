@@ -1,17 +1,15 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ page import="stagelink.Database" %>
+<%@ page import="stagelink.Web" %>
 <%@ page import="java.sql.*"%>
 <%
     // =========================================================================
     // LÓGICA DE SERVIDOR (JAVA / JDBC) - NOTIFICACIONES
-    // Consultamos la tabla de notificaciones en la base de datos local de MySQL
+    // Consultamos la tabla de notificaciones en la base de datos MySQL de MySQL
     // para listar los cambios de estado y confirmaciones del usuario.
     // =========================================================================
     String errorNotificaciones = "";
     
-    // Parámetros de conexión local a XAMPP
-    String url = "jdbc:mysql://localhost:3306/stagelink?useSSL=false&serverTimezone=UTC";
-    String usuarioDb = "root";
-    String passwordDb = "";
 %>
 <!doctype html>
 <html lang="es">
@@ -27,12 +25,12 @@
 	href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230a0a0a'/%3E%3Cpath d='M18 18h30v8H27v7h17v8H27v10h-9z' fill='white'/%3E%3C/svg%3E">
 
 <!-- Hoja de estilos principal (ajustada a la ruta relativa '../css/styles.css') -->
-<link rel="stylesheet" href="../css/styles.css">
+<link rel="stylesheet" href="${pageContext.request.contextPath}/css/styles.css">
 
 <!-- Script local de interfaz para la gestión visual -->
-<script src="../javascript/app.js" defer></script>
+<script src="${pageContext.request.contextPath}/javascript/app.js" defer></script>
 </head>
-<body data-page="notifications">
+<body data-page="notifications" <%= Web.shellAttributes(session) %>>
 	<!-- Enlace de accesibilidad para saltar directamente al contenido principal -->
 	<a class="skip-link" href="#main-content">Saltar al contenido</a>
 
@@ -61,13 +59,12 @@
 				<section class="notification-list" id="notification-list"
 					aria-label="Lista de notificaciones">
 					<%
-            try {
-                Class.forName("com.mysql.cj.jdbc.Driver");
-                Connection conn = DriverManager.getConnection(url, usuarioDb, passwordDb);
+            try (Connection conn = Database.open()) {
                 
                 // Consulta para obtener las notificaciones más recientes (ajusta el nombre de tu tabla si difiere)
-                String sql = "SELECT * FROM notificacion ORDER BY id DESC LIMIT 20";
+                String sql = "SELECT * FROM notificacion WHERE usuario_id = ? ORDER BY id DESC LIMIT 20";
                 PreparedStatement stmt = conn.prepareStatement(sql);
+                stmt.setInt(1, Web.userId(session));
                 ResultSet rs = stmt.executeQuery();
 
                 boolean hayNotificaciones = false;
@@ -81,8 +78,8 @@
 					<!-- Tarjeta de notificación individual generada por Java -->
 					<article class="card notification-card"
 						style="padding: 16px; margin-bottom: 12px; <%= leida ? "opacity: 0.7;" : "border-left: 4px solid #0a0a0a;" %>">
-						<p style="margin: 0; font-size: 0.95rem;"><%= mensaje %></p>
-						<small style="color: #666; display: block; margin-top: 8px;"><%= fecha != null ? fecha : "Reciente" %></small>
+						<p style="margin: 0; font-size: 0.95rem;"><%= Web.html(mensaje) %></p>
+						<small style="color: #666; display: block; margin-top: 8px;"><%= Web.html(fecha != null ? fecha : "Reciente") %></small>
 					</article>
 					<%
                 }
@@ -97,11 +94,10 @@
 
                 rs.close();
                 stmt.close();
-                conn.close();
             } catch (Exception e) {
           %>
 					<div class="auth-message" data-type="error">No se pudieron
-						cargar las notificaciones desde la base de datos local.</div>
+						cargar las notificaciones desde la base de datos MySQL.</div>
 					<%
             }
           %>

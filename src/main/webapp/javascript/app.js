@@ -1,58 +1,7 @@
-// =========================================================================
-// LIMPIEZA SELECTIVA DE LA SIMULACIÓN LOCAL
-// Antes: localStorage.clear() borraba TODO (incluido el rol activo).
-// Ahora: se siguen limpiando los datos de simulación del actor, pero se
-// conservan las claves necesarias para el rol de Productora.
-// =========================================================================
-(() => {
-  const PERSISTENT_KEYS = ["stagelink.role", "stagelink.subscription"];
-  const PERSISTENT_PREFIXES = ["stagelink.producer."];
-
-  try {
-    Object.keys(localStorage).forEach((key) => {
-      const keep =
-        PERSISTENT_KEYS.includes(key) ||
-        PERSISTENT_PREFIXES.some((prefix) => key.startsWith(prefix));
-      if (!keep) localStorage.removeItem(key);
-    });
-  } catch (error) {
-    // Si localStorage no está disponible, continuamos sin limpiar.
-  }
-})();
-
 (() => {
   "use strict";
 
-  const STORAGE = {
-    role: "stagelink.role",
-    profiles: "stagelink.profiles",
-    portfolio: "stagelink.portfolio",
-    workHistory: "stagelink.workHistory",
-    remoteAuditions: "stagelink.remoteAuditions",
-    createdAuditions: "stagelink.createdAuditions",
-    savedAuditions: "stagelink.savedAuditions",
-    applications: "stagelink.applications",
-    notifications: "stagelink.notifications",
-    candidates: "stagelink.candidates",
-    // Datos de la compañía (Productora). Se conserva en la limpieza por su prefijo.
-    producerCompany: "stagelink.producer.company"
-  };
-
-  const backend = window.StageLinkBackend || null;
-
-  function isRemoteMode() {
-    return Boolean(backend?.configured);
-  }
-
-  const DEFAULT_AUDITIONS = [];
-  const DEFAULT_PROFILES = {
-    actor: { displayName: "María Rivera", city: "Ciudad de Panamá", bio: "Actriz en formación.", phone: "+507 6000-1234", avatar: "" },
-    producer: { displayName: "Producciones Istmo", city: "Ciudad de Panamá", bio: "Compañía independiente.", phone: "+507 390-8840", avatar: "" }
-  };
-  const DEFAULT_PORTFOLIO = [];
-  const DEFAULT_NOTIFICATIONS = [];
-  const DEFAULT_APPLICATIONS = [];
-  const DEFAULT_CANDIDATES = [];
+  const session = document.body.dataset;
 
   const PAGE_META = {
     feed: ["Audiciones", "Oportunidades abiertas"],
@@ -73,64 +22,43 @@
     edit: "dashboard"
   };
 
-  function read(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw === null ? fallback : JSON.parse(raw);
-    } catch (error) {
-      return fallback;
-    }
-  }
-
-  function write(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-      return true;
-    } catch (error) {
-      return false;
-    }
-  }
-
   function getRole() {
-    const stored = localStorage.getItem(STORAGE.role);
-    return stored === "producer" || stored === "actor" ? stored : "actor";
+    return session.sessionRole === "producer" ? "producer" : "actor";
   }
 
-  function setRole(role) {
-    if (role !== "actor" && role !== "producer") return;
-    localStorage.setItem(STORAGE.role, role);
+  function storageKey(key) {
+    return key + ".account." + (session.sessionUser || "0");
   }
 
-  // Rol de demostración por parámetro de URL: ?role=producer | ?role=actor
-  // (No hay sesión real todavía; esto permite probar cada rol.)
-  (function applyRoleFromUrl() {
-    try {
-      const requested = new URLSearchParams(window.location.search).get("role");
-      if (requested === "producer" || requested === "actor") setRole(requested);
-    } catch (error) {
-      // Ignoramos errores de lectura de la URL.
-    }
-  })();
-
-  function getProfile(role = getRole() || "actor") {
-    const profiles = read(STORAGE.profiles, DEFAULT_PROFILES);
-    const profile = { ...DEFAULT_PROFILES[role], ...(profiles[role] || {}) };
-
-    // Productora: los datos guardados de la compañía (producer-profile.js)
-    // tienen prioridad, para que el sidebar muestre el nombre y la foto actuales.
-    if (role === "producer") {
-      const company = read(STORAGE.producerCompany, null);
-      if (company && typeof company === "object") {
-        const name = company.displayName || company.name;
-        if (name) profile.displayName = name;
-        if (company.city) profile.city = company.city;
-        if (company.bio) profile.bio = company.bio;
-        if (company.phone) profile.phone = company.phone;
-        if (company.avatar) profile.avatar = company.avatar;
+  function getProfile() {
+    const profile = { displayName: session.sessionName || "Invitado", avatar: "" };
+    if (getRole() === "producer") {
+      try {
+        const company = JSON.parse(localStorage.getItem(storageKey("stagelink.producer.company")));
+        if (company) {
+          profile.displayName = company.displayName || company.name || profile.displayName;
+          profile.avatar = company.avatar || "";
+        }
+      } catch {
+        // El nombre de la cuenta sigue disponible si falla el almacenamiento.
       }
     }
-
     return profile;
+  }
+
+  async function postAudition(fields) {
+    const form = new URLSearchParams(fields);
+    form.set("csrf", session.csrf);
+    const response = await fetch("create-audition.jsp", {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      body: form
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !Number.isInteger(result?.id) || result.id < 1) {
+      throw new Error(result?.error || "No se pudo guardar la convocatoria.");
+    }
+    return result.id;
   }
 
   function escapeHtml(value) {
@@ -212,7 +140,7 @@
 
   function initShell(page) {
     const role = getRole();
-    const profile = getProfile(role);
+    const profile = getProfile();
     const items = navItems(role);
     const sidebar = document.querySelector("#sidebar");
     const topbar = document.querySelector("#topbar");
@@ -239,6 +167,13 @@
           <h2 class="topbar-title">${escapeHtml(pageMeta[0])}</h2>
         </div>
         <div class="heading-actions">
+          ${session.sessionUser && session.sessionUser !== "0"
+            ? `<form action="auth.jsp" method="POST">
+                <input type="hidden" name="accion" value="logout">
+                <input type="hidden" name="csrf" value="${escapeHtml(session.csrf)}">
+                <button class="text-button" type="submit">Cerrar sesión</button>
+              </form>`
+            : '<a class="text-button" href="auth.jsp">Iniciar sesión</a>'}
           <span class="role-chip" aria-label="Tipo de cuenta actual">
             <span class="dot"></span><span>${role === "producer" ? "Productora" : "Artista"}</span>
           </span>
@@ -258,7 +193,7 @@
 
   // API mínima para que los scripts de Productora (producer-*.js) reutilicen
   // el rol y el perfil sin duplicar las claves de almacenamiento.
-  window.StageLinkApp = { getRole, setRole, getProfile, escapeHtml };
+  window.StageLinkApp = { getRole, getProfile, storageKey, postAudition, escapeHtml };
 
   const page = document.body.dataset.page;
   if (page && page !== "welcome") {

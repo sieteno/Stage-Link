@@ -370,7 +370,7 @@
   // ---------------------------------------------------------------------
   function bindEvents() {
     // Mis convocatorias: ver candidatos / cambiar estado
-    auditionList.addEventListener("click", (event) => {
+    auditionList.addEventListener("click", async (event) => {
       const selectButton = event.target.closest("[data-select-audition]");
       if (selectButton) {
         selectAudition(selectButton.dataset.selectAudition);
@@ -385,8 +385,21 @@
           showSubscriptionRequired();
           return;
         }
-        Data.setAuditionStatus(statusButton.dataset.auditionStatus, next);
-        renderAuditions();
+        const id = statusButton.dataset.auditionStatus;
+        const message = document.querySelector("#audition-status-error");
+        message.hidden = true;
+        try {
+          statusButton.disabled = true;
+          if (id.startsWith("db-")) {
+            await App.postAudition({ id: id.slice(3), statusAction: next });
+          }
+          Data.setAuditionStatus(id, next);
+          renderAuditions();
+        } catch (error) {
+          message.textContent = error.message;
+          message.hidden = false;
+          statusButton.disabled = false;
+        }
       }
     });
 

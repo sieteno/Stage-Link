@@ -326,7 +326,7 @@
     return true;
   }
 
-  function save() {
+  async function save() {
     if (saving) return;
     if (!validate()) return;
 
@@ -335,7 +335,21 @@
     saveButton.textContent = "Guardando…";
 
     // No se envía "status": la edición conserva el estado actual de la convocatoria
-    Data.saveAudition({ ...collect(), id: original.id });
+    const changes = collect();
+    try {
+      if (original.id.startsWith("db-")) {
+        const fields = new FormData(form);
+        fields.set("id", original.id.slice(3));
+        await App.postAudition(fields);
+      }
+      Data.saveAudition({ ...changes, id: original.id });
+    } catch (error) {
+      showMessage(error.message);
+      saving = false;
+      saveButton.disabled = false;
+      saveButton.textContent = "Guardar cambios";
+      return;
+    }
 
     window.location.href = `dashboard.jsp?audition=${encodeURIComponent(original.id)}`;
   }

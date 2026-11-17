@@ -76,7 +76,7 @@
   // ---------------------------------------------------------------------
   function read(key, fallback) {
     try {
-      const raw = localStorage.getItem(key);
+      const raw = localStorage.getItem(window.StageLinkApp.storageKey(key));
       return raw === null ? fallback : JSON.parse(raw);
     } catch (error) {
       return fallback;
@@ -85,7 +85,7 @@
 
   function write(key, value) {
     try {
-      localStorage.setItem(key, JSON.stringify(value));
+      localStorage.setItem(window.StageLinkApp.storageKey(key), JSON.stringify(value));
       return true;
     } catch (error) {
       return false;
@@ -94,7 +94,7 @@
 
   function remove(key) {
     try {
-      localStorage.removeItem(key);
+      localStorage.removeItem(window.StageLinkApp.storageKey(key));
     } catch (error) {
       // Sin acción: localStorage no disponible.
     }
@@ -325,7 +325,7 @@
         materials: [],
         createdAt: new Date().toISOString().slice(0, 10),
         ...incoming,
-        id: uid("aud")
+        id: incoming.id || uid("aud")
       };
       list.unshift(saved);
     }

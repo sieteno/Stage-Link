@@ -1,4 +1,6 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ page import="stagelink.Database" %>
+<%@ page import="stagelink.Web" %>
 <%@ page import="java.sql.*"%>
 <%
     // =========================================================================
@@ -8,11 +10,8 @@
     String typeParam = request.getParameter("type");
     String compParam = request.getParameter("compensation");
     
-    String url = "jdbc:mysql://localhost:3306/stagelink?useSSL=false&serverTimezone=UTC";
-    String usuarioDb = "root";
-    String passwordDb = "";
 
-    StringBuilder sqlBuilder = new StringBuilder("SELECT * FROM audicion WHERE 1=1");
+    StringBuilder sqlBuilder = new StringBuilder("SELECT * FROM audicion WHERE publicada = TRUE");
     
     if (queryParam != null && !queryParam.trim().isEmpty()) {
         sqlBuilder.append(" AND (titulo LIKE ? OR descripcion LIKE ?)");
@@ -42,7 +41,7 @@
 <link rel="stylesheet" href="${pageContext.request.contextPath}/css/styles.css">
 <script src="${pageContext.request.contextPath}/javascript/app.js" defer></script>
 </head>
-<body data-page="feed">
+<body data-page="feed" <%= Web.shellAttributes(session) %>>
 	<a class="skip-link" href="#main-content">Saltar al contenido</a>
 
 	<div class="app-frame">
@@ -73,7 +72,7 @@
               <path d="m20 20-4-4"></path>
             </svg> <input class="input" type="search" name="query"
 						placeholder="Obra, compañía, rol…" autocomplete="off"
-						value="<%= (queryParam != null) ? queryParam : "" %>">
+						value="<%= Web.html(queryParam) %>">
 					</label> <label class="field"> <span class="sr-only">Tipo de
 							proyecto</span> <select class="select" name="type"
 						onchange="this.form.submit()">
@@ -133,9 +132,7 @@
 					aria-label="Resultados de audiciones">
 					<%
             int cantidadResultados = 0;
-            try {
-                Class.forName("com.mysql.cj.jdbc.Driver");
-                Connection conn = DriverManager.getConnection(url, usuarioDb, passwordDb);
+            try (Connection conn = Database.open()) {
                 
                 PreparedStatement stmt = conn.prepareStatement(sqlBuilder.toString());
                 
@@ -166,16 +163,16 @@
 						style="padding: 20px; margin-bottom: 16px;">
 						<header style="margin-bottom: 10px;">
 							<span class="badge"
-								style="background: #e0e0e0; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;"><%= tipo %></span>
+								style="background: #e0e0e0; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;"><%= Web.html(tipo) %></span>
 							<h2 style="margin-top: 8px;">
 								<a href="${pageContext.request.contextPath}/audition.jsp?id=<%= id %>"
-									style="text-decoration: none; color: inherit;"><%= titulo %></a>
+									style="text-decoration: none; color: inherit;"><%= Web.html(titulo) %></a>
 							</h2>
 						</header>
-						<p style="color: #666; font-size: 0.95rem;"><%= descripcion %></p>
+						<p style="color: #666; font-size: 0.95rem;"><%= Web.html(descripcion) %></p>
 						<footer
 							style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center;">
-							<small>📍 <%= lugar %></small> <a
+							<small>📍 <%= Web.html(lugar) %></small> <a
 								href="${pageContext.request.contextPath}/audition.jsp?id=<%= id %>" class="button secondary small">Ver
 								detalles</a>
 						</footer>
@@ -193,12 +190,12 @@
 
                 rs.close();
                 stmt.close();
-                conn.close();
-            } catch (Exception e) {
+            } catch (SQLException e) {
+                application.log("No se pudo leer el feed.", e);
           %>
 					<div class="auth-message" data-type="error">
 						Error al cargar las convocatorias:
-						<%= e.getMessage() %>
+						No se pudieron cargar las convocatorias.
 					</div>
 					<%
             }

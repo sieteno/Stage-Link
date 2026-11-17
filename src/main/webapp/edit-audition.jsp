@@ -1,4 +1,5 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ page import="stagelink.Web" %>
 <!doctype html>
 <html lang="es">
 <head>
@@ -21,7 +22,7 @@
 <script src="${pageContext.request.contextPath}/javascript/producer-data.js" defer></script>
 <script src="${pageContext.request.contextPath}/javascript/producer-edit.js" defer></script>
 </head>
-<body data-page="edit">
+<body data-page="edit" <%= Web.shellAttributes(session) %>>
 	<!-- Enlace de accesibilidad para saltar directamente al contenido -->
 	<a class="skip-link" href="#main-content">Saltar al contenido</a>
 

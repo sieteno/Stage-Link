@@ -1,27 +1,17 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
+<%@ page import="stagelink.Database" %>
 <%@ page import="java.sql.*"%>
+<%@ page import="stagelink.Web" %>
 <%
     // =========================================================================
     // LÓGICA DE SERVIDOR (JAVA / JDBC) - PÁGINA DE BIENVENIDA (INDEX)
     // =========================================================================
     boolean conexionActiva = false;
     
-    // Parámetros de conexión local a XAMPP
-    String url = "jdbc:mysql://localhost:3306/stagelink?useSSL=false&serverTimezone=UTC";
-    String usuarioDb = "root";
-    String passwordDb = "";
-
-    try {
-        // Cargamos el Driver JDBC configurado en Maven
-        Class.forName("com.mysql.cj.jdbc.Driver");
-        Connection conn = DriverManager.getConnection(url, usuarioDb, passwordDb);
-        
-        if (conn != null && !conn.isClosed()) {
-            conexionActiva = true;
-            conn.close();
-        }
-    } catch (Exception e) {
-        conexionActiva = false;
+    try (Connection conn = Database.open()) {
+        conexionActiva = conn.isValid(3);
+    } catch (SQLException error) {
+        application.log("No se pudo conectar con MySQL.", error);
     }
 %>
 <!doctype html>
@@ -118,7 +108,7 @@
 					<% if (conexionActiva) { %>
 					✅ Conexión con base de datos MySQL local activa.
 					<% } else { %>
-					⚠️ No se pudo conectar a MySQL (Verifica XAMPP).
+					⚠️ No se pudo conectar a MySQL.
 					<% } %>
 				</p>
 			</section>
